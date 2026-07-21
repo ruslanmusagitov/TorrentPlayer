@@ -36,6 +36,46 @@ public actor PeerManager {
         self.pieceCount = pieceCount
     }
 
+    /// Replace the live piece picker (value type). Callers must preserve
+    /// availability state when only changing strategy/range.
+    public func updatePiecePicker(_ picker: PiecePicker) {
+        self.piecePicker = picker
+    }
+
+    /// Mutate the live piece picker in place.
+    public func modifyPiecePicker(_ body: (inout PiecePicker) -> Void) {
+        guard var picker = piecePicker else { return }
+        body(&picker)
+        piecePicker = picker
+    }
+
+    /// Update pick strategy/range, cancel in-flight block requests, and refill pipelines.
+    public func applyPiecePriority(range: Range<Int>, mode: PiecePickMode) async {
+        modifyPiecePicker { picker in
+            picker.setPriority(range: range, mode: mode)
+        }
+        await cancelAllPendingRequests()
+        for key in peerStates.keys {
+            await fillRequests(for: key)
+        }
+    }
+
+    private func cancelAllPendingRequests() async {
+        for (key, state) in peerStates {
+            let pending = await state.getPendingRequests()
+            if let conn = connections[key] {
+                for request in pending.keys {
+                    try? await conn.send(.cancel(
+                        index: UInt32(request.pieceIndex),
+                        begin: UInt32(request.offset),
+                        length: UInt32(request.length)
+                    ))
+                }
+            }
+            await state.clearPendingRequests()
+        }
+    }
+
     public func configureMagnet(metadataExchange: MetadataExchange) {
         self.metadataExchange = metadataExchange
     }

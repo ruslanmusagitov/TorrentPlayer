@@ -5,6 +5,7 @@
 //  Task #3: torrent session on macOS (SwiftTorrent SPM).
 //  Task #4: metadata fetch and file list.
 //  Task #5: video file selection.
+//  Task #6: sequential download of selected file.
 //
 
 import Foundation
@@ -93,6 +94,9 @@ final class TorrentEngine {
               activeTorrent.videoFiles.contains(where: { $0.id == id })
         else { return }
         selectedFileID = id
+        #if os(macOS)
+        Task { await applySequentialPriorityForSelection() }
+        #endif
     }
 
     /// Test helper: simulates a successful metadata load without the torrent session.
@@ -193,6 +197,7 @@ final class TorrentEngine {
             lastMagnetURI = trimmed
             pendingInfoHash = nil
             phase = .loaded(torrent)
+            await applySequentialPriorityForSelection()
         } catch let error as TorrentEngineError {
             if case .metadataTimeout = error {
                 throw error
@@ -243,6 +248,11 @@ final class TorrentEngine {
             selectedFileID = nil
         }
         phase = .error(message)
+    }
+
+    private func applySequentialPriorityForSelection() async {
+        guard let handle = activeHandle, let selectedFileID else { return }
+        await handle.prioritizeFile(selectedFileID, sequential: true)
     }
     #endif
 
