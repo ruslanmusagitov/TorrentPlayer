@@ -28,10 +28,12 @@ final class TorrentEngine {
 
     private(set) var phase: Phase = .idle
     private(set) var lastMagnetURI: String?
+    private(set) var activeTorrent: ActiveTorrent?
 
     #if os(macOS)
     private var session: Session?
     private var activeHandle: TorrentHandle?
+    private var activeInfoHash: InfoHash?
     #endif
 
     private let metadataTimeoutSeconds: Int
@@ -40,11 +42,13 @@ final class TorrentEngine {
         self.metadataTimeoutSeconds = metadataTimeoutSeconds
     }
 
-    var activeTorrent: ActiveTorrent? {
-        if case let .loaded(torrent) = phase {
-            return torrent
+    var isLoadingTorrent: Bool {
+        switch phase {
+        case .adding, .fetchingMetadata:
+            true
+        default:
+            false
         }
-        return nil
     }
 
     var isOperational: Bool {
@@ -116,45 +120,70 @@ final class TorrentEngine {
             throw TorrentEngineError.sessionNotReady
         }
 
+        let previousTorrent = activeTorrent
+        let previousInfoHash = activeInfoHash
+
         phase = .adding
+        var pendingInfoHash: InfoHash?
+
         do {
             let downloads = try Self.downloadsDirectory()
             let params = try AddTorrentParams.fromMagnet(trimmed, savePath: downloads.path)
+            guard let infoHash = params.infoHash else {
+                throw AddTorrentError.noInfoHash
+            }
+            pendingInfoHash = infoHash
+
             let handle = try await session.addTorrent(params)
             activeHandle = handle
-            lastMagnetURI = trimmed
 
             phase = .fetchingMetadata
             let info: TorrentInfo
             do {
                 info = try await handle.waitForMetadata(timeout: metadataTimeoutSeconds)
             } catch is TorrentError {
-                phase = .ready
+                await session.removeTorrent(infoHash)
+                pendingInfoHash = nil
                 activeHandle = nil
+                activeInfoHash = previousInfoHash
+                restorePhase(previousTorrent: previousTorrent)
                 throw TorrentEngineError.metadataTimeout
             }
 
-            let hash = params.infoHash.map(\.description) ?? info.infoHash.description
-            let torrent = ActiveTorrent.from(info: info, infoHash: hash)
-            phase = .loaded(torrent)
-        } catch let error as TorrentEngineError {
-            if case .fetchingMetadata = phase {
-                phase = .ready
-                activeHandle = nil
-            } else if case .adding = phase {
-                phase = .ready
-                activeHandle = nil
+            if let previousInfoHash, previousInfoHash != infoHash {
+                await session.removeTorrent(previousInfoHash)
             }
-            throw error
+
+            let hash = infoHash.description
+            let torrent = ActiveTorrent.from(info: info, infoHash: hash)
+            activeTorrent = torrent
+            activeInfoHash = infoHash
+            lastMagnetURI = trimmed
+            pendingInfoHash = nil
+            phase = .loaded(torrent)
         } catch {
-            phase = .ready
+            if let pendingInfoHash {
+                await session.removeTorrent(pendingInfoHash)
+            }
             activeHandle = nil
+            activeInfoHash = previousInfoHash
+            restorePhase(previousTorrent: previousTorrent)
             throw error
         }
         #else
         throw TorrentEngineError.unsupportedPlatform
         #endif
     }
+
+    #if os(macOS)
+    private func restorePhase(previousTorrent: ActiveTorrent?) {
+        if let previousTorrent {
+            phase = .loaded(previousTorrent)
+        } else {
+            phase = .ready
+        }
+    }
+    #endif
 
     static func downloadsDirectory() throws -> URL {
         let base = try FileManager.default.url(

@@ -25,7 +25,7 @@ struct SelectFileView: View {
                         activeTorrentHeader(torrent)
                     }
 
-                    if case .fetchingMetadata = engine.phase {
+                    if engine.isLoadingTorrent {
                         loadingState
                     } else if engine.activeTorrent == nil {
                         emptyState

@@ -108,7 +108,7 @@ struct LoadMagnetView: View {
                 Image(systemName: "sensor.tag.radiowaves.forward")
                     .font(.system(size: 48, weight: .regular))
                 switch engine.phase {
-                case .fetchingMetadata:
+                case .fetchingMetadata, .adding:
                     Text("Fetching Metadata…")
                         .font(KTTypography.technicalSM())
                         .textCase(.uppercase)
