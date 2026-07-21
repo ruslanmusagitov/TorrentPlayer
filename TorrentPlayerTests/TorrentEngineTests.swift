@@ -33,11 +33,7 @@ struct TorrentEngineTests {
         #else
         let engine = TorrentEngine()
         await engine.bootstrap()
-        if case let .error(message) = engine.phase {
-            #expect(message.contains("macOS"))
-        } else {
-            Issue.record("Expected unsupported platform error on non-macOS")
-        }
+        #expect(engine.phase == .unsupportedPlatform)
         #endif
     }
 
@@ -68,6 +64,7 @@ struct TorrentEngineTests {
         await #expect(throws: AddTorrentError.self) {
             try await engine.addMagnet("not-a-magnet")
         }
+        #expect(engine.phase == .ready)
         #else
         #expect(Bool(true))
         #endif

@@ -18,6 +18,7 @@ final class TorrentEngine {
         case idle
         case starting
         case ready
+        case unsupportedPlatform
         case adding
         case added(displayName: String, infoHash: String)
         case error(String)
@@ -47,10 +48,12 @@ final class TorrentEngine {
             "Starting Session…"
         case .ready:
             "System Ready"
+        case .unsupportedPlatform:
+            "Torrent Engine: macOS Only (iOS Soon)"
         case .adding:
             "Accepting Magnet…"
-        case let .added(name, _):
-            "Magnet Accepted: \(name)"
+        case .added:
+            "Magnet Accepted"
         case let .error(message):
             "Error: \(message)"
         }
@@ -80,7 +83,7 @@ final class TorrentEngine {
             phase = .error(error.localizedDescription)
         }
         #else
-        phase = .error(TorrentEngineError.unsupportedPlatform.localizedDescription ?? "Unsupported platform")
+        phase = .unsupportedPlatform
         #endif
     }
 
@@ -107,12 +110,10 @@ final class TorrentEngine {
             lastMagnetURI = trimmed
             phase = .added(displayName: name, infoHash: hash)
         } catch {
-            phase = .error(error.localizedDescription)
+            phase = .ready
             throw error
         }
         #else
-        let message = TorrentEngineError.unsupportedPlatform.localizedDescription ?? "Unsupported platform"
-        phase = .error(message)
         throw TorrentEngineError.unsupportedPlatform
         #endif
     }
