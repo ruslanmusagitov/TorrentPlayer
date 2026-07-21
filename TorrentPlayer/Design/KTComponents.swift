@@ -42,22 +42,23 @@ struct BrutalPressStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let shadow = largeShadow ? KTSpacing.shadowOffsetLarge : KTSpacing.shadowOffset
-        // Fixed outer frame: moving the control on press cancels macOS mouse-up.
-        ZStack(alignment: .topLeading) {
-            if !configuration.isPressed {
-                Rectangle()
-                    .fill(KTColor.onBackground)
-                    .offset(x: shadow, y: shadow)
+        // Shadow sized to the label (not a free Rectangle in ZStack — that ate leftover height).
+        // Fixed outer padding: moving the control on press cancels macOS mouse-up.
+        configuration.label
+            .offset(
+                x: configuration.isPressed ? shadow : 0,
+                y: configuration.isPressed ? shadow : 0
+            )
+            .background(alignment: .topLeading) {
+                if !configuration.isPressed {
+                    Rectangle()
+                        .fill(KTColor.onBackground)
+                        .offset(x: shadow, y: shadow)
+                }
             }
-            configuration.label
-                .offset(
-                    x: configuration.isPressed ? shadow : 0,
-                    y: configuration.isPressed ? shadow : 0
-                )
-        }
-        .padding(.trailing, shadow)
-        .padding(.bottom, shadow)
-        .contentShape(Rectangle())
+            .padding(.trailing, shadow)
+            .padding(.bottom, shadow)
+            .contentShape(Rectangle())
     }
 }
 

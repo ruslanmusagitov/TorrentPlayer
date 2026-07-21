@@ -21,6 +21,8 @@ public actor PeerManager {
     public var onMetadataReceived: ((TorrentInfo) -> Void)?
 
     private var pieceCount: Int = 0
+    /// Throttle noisy fillRequests "no pick" logs per peer.
+    private var lastNoPickLog: [String: ContinuousClock.Instant] = [:]
 
     public init(infoHash: Data, peerID: Data, group: EventLoopGroup, maxConnections: Int = 50) {
         self.infoHash = infoHash
@@ -80,8 +82,27 @@ public actor PeerManager {
         self.metadataExchange = metadataExchange
     }
 
+    public func clearMetadataExchange() {
+        self.metadataExchange = nil
+    }
+
     public func setOnMetadataReceived(_ handler: @escaping (TorrentInfo) -> Void) {
         self.onMetadataReceived = handler
+    }
+
+    public func setOnPieceCompleted(_ handler: @escaping (Int) -> Void) {
+        self.onPieceCompleted = handler
+    }
+
+    /// Drop all peers (e.g. after magnet metadata when pieceCount becomes known).
+    public func disconnectAll() async {
+        let keys = Array(connections.keys)
+        for key in keys {
+            if let conn = connections[key] {
+                try? await conn.close()
+            }
+            removePeerByKey(key)
+        }
     }
 
     /// Add a peer and attempt connection.
@@ -93,6 +114,15 @@ public actor PeerManager {
         let conn = PeerConnection(address: address, port: port, infoHash: infoHash, peerID: peerID)
         connections[key] = conn
         peerInfos[key] = PeerInfo(id: Data(), address: address, port: port)
+
+        // Create PeerState BEFORE connect completes. Peers send bitfield immediately
+        // after handshake; if state is missing those messages are dropped and we
+        // never learn which pieces they have (0 downloads forever).
+        let pc = pieceCount > 0 ? pieceCount : 1
+        let state = PeerState(pieceCount: pc)
+        peerStates[key] = state
+        await state.setAmInterested(true)
+        TorrentLog.peer("addPeer \(key) pieceCount=\(pc) connections=\(connections.count)")
 
         // Set up message callbacks
         conn.onMessage = { [weak self] message in
@@ -109,6 +139,7 @@ public actor PeerManager {
                 let _ = try await conn.connect(on: group)
                 await self.onPeerConnected(key: key, conn: conn)
             } catch {
+                TorrentLog.peer("connect FAILED \(key): \(error)")
                 await self.removePeerByKey(key)
             }
         }
@@ -116,26 +147,45 @@ public actor PeerManager {
 
     private func onPeerConnected(key: String, conn: PeerConnection) async {
         connectedPeers.insert(key)
+        TorrentLog.peer(
+            "handshake OK \(key) ext=\(conn.supportsExtensions) connected=\(connectedPeers.count)/\(connections.count)"
+        )
 
-        let pc = pieceCount > 0 ? pieceCount : 1
-        let state = PeerState(pieceCount: pc)
-        await state.setAmInterested(true)
-        if conn.supportsExtensions {
-            await state.setAmInterested(true)
+        // Keep existing state — it may already hold the peer's bitfield.
+        if peerStates[key] == nil {
+            let pc = pieceCount > 0 ? pieceCount : 1
+            peerStates[key] = PeerState(pieceCount: pc)
         }
-        peerStates[key] = state
+        if let state = peerStates[key] {
+            await state.setAmInterested(true)
+            let bf = await state.getPeerBitfield()
+            TorrentLog.peer("state ready \(key) bitfieldPopcount=\(bf.popcount)/\(bf.count) choking=\(await state.getPeerChoking())")
+        }
+
+        // Send our bitfield once we know the piece count (post-metadata).
+        if pieceCount > 0 {
+            let empty = Bitfield(count: pieceCount)
+            try? await conn.send(.bitfield(empty.toData()))
+            TorrentLog.peer("sent empty bitfield (\(pieceCount) pieces) → \(key)")
+        }
 
         // Send interested
         try? await conn.send(.interested)
+        TorrentLog.peer("sent interested → \(key)")
 
         // If peer supports extensions and we need metadata, send extended handshake
         if conn.supportsExtensions, let metaEx = metadataExchange {
             let extHandshake = await metaEx.buildExtendedHandshake()
             try? await conn.send(.extended(id: 0, payload: extHandshake))
+            TorrentLog.peer("sent extended handshake → \(key)")
         }
+
+        // Peer may already have unchoked us while state existed during handshake.
+        await fillRequests(for: key)
     }
 
     private func handleDisconnect(key: String) {
+        TorrentLog.peer("disconnect \(key)")
         if let state = peerStates[key] {
             Task {
                 let bf = await state.getPeerBitfield()
@@ -149,10 +199,14 @@ public actor PeerManager {
         peerInfos.removeValue(forKey: key)
         peerStates.removeValue(forKey: key)
         connectedPeers.remove(key)
+        lastNoPickLog.removeValue(forKey: key)
     }
 
     private func handleMessage(_ message: PeerMessage, from key: String) async {
-        guard let state = peerStates[key] else { return }
+        guard let state = peerStates[key] else {
+            TorrentLog.peer("DROP \(Self.describe(message)) from \(key) — no PeerState")
+            return
+        }
 
         switch message {
         case .bitfield(let data):
@@ -163,6 +217,7 @@ public actor PeerManager {
                 piecePicker = picker
             }
             peerInfos[key]?.peerBitfield = bf
+            TorrentLog.peer("bitfield ← \(key) have=\(bf.popcount)/\(bf.count) rawBytes=\(data.count)")
             await fillRequests(for: key)
 
         case .have(let pieceIndex):
@@ -177,9 +232,11 @@ public actor PeerManager {
         case .choke:
             await state.setPeerChoking(true)
             await state.clearPendingRequests()
+            TorrentLog.peer("choke ← \(key)")
 
         case .unchoke:
             await state.setPeerChoking(false)
+            TorrentLog.peer("unchoke ← \(key)")
             await fillRequests(for: key)
 
         case .interested:
@@ -197,11 +254,11 @@ public actor PeerManager {
             guard let pm = pieceManager else { break }
             await pm.addBlock(pieceIndex: pieceIndex, offset: offset, data: block)
 
-            // Check if all blocks received for this piece
-            let expectedSize = await pm.expectedPieceSize(pieceIndex)
-            let buffer = await pm.getPieceBuffer(pieceIndex)
-            if let buf = buffer, buf.count >= expectedSize {
-                await onPieceComplete(index: pieceIndex, data: buf)
+            if await pm.hasAllBlocks(pieceIndex) {
+                let expectedSize = await pm.expectedPieceSize(pieceIndex)
+                if let buf = await pm.getPieceBuffer(pieceIndex), buf.count >= expectedSize {
+                    await onPieceComplete(index: pieceIndex, data: buf)
+                }
             }
 
             await fillRequests(for: key)
@@ -217,6 +274,9 @@ public actor PeerManager {
                         try? await connections[key]?.send(msg)
                     }
                 case .metadataComplete(let info):
+                    TorrentLog.session(
+                        "metadata complete via \(key) name=\(info.name) pieces=\(info.pieceCount) size=\(info.totalSize)"
+                    )
                     onMetadataReceived?(info)
                 case .none:
                     break
@@ -225,6 +285,23 @@ public actor PeerManager {
 
         default:
             break
+        }
+    }
+
+    private static func describe(_ message: PeerMessage) -> String {
+        switch message {
+        case .keepAlive: "keepAlive"
+        case .choke: "choke"
+        case .unchoke: "unchoke"
+        case .interested: "interested"
+        case .notInterested: "notInterested"
+        case .have(let i): "have(\(i))"
+        case .bitfield(let d): "bitfield(\(d.count)b)"
+        case .request(let i, let b, let l): "request(\(i),\(b),\(l))"
+        case .piece(let i, let b, let d): "piece(\(i),\(b),\(d.count))"
+        case .cancel(let i, let b, let l): "cancel(\(i),\(b),\(l))"
+        case .port(let p): "port(\(p))"
+        case .extended(let id, let p): "extended(\(id),\(p.count))"
         }
     }
 
@@ -237,26 +314,47 @@ public actor PeerManager {
         guard !peerChoking else { return }
 
         let completed = await pm.getCompleted()
+        let peerBF = await state.getPeerBitfield()
+        let rangeDesc: String
+        if let picker = piecePicker, let r = picker.interestedPieceRange {
+            rangeDesc = "range=\(r.lowerBound)..<\(r.upperBound) mode=\(picker.pickMode)"
+        } else if let picker = piecePicker {
+            rangeDesc = "range=all mode=\(picker.pickMode)"
+        } else {
+            rangeDesc = "no-picker"
+        }
 
+        var requestedBlocks = 0
         while await state.canRequest {
-            let peerBF = await state.getPeerBitfield()
             guard let picker = piecePicker,
-                  let pieceIndex = picker.pick(have: completed, peerHas: peerBF) else { break }
+                  let pieceIndex = picker.pick(have: completed, peerHas: peerBF) else {
+                if requestedBlocks == 0, shouldLogNoPick(for: key) {
+                    TorrentLog.piece(
+                        "no pick ← \(key) \(rangeDesc) peerHave=\(peerBF.popcount)/\(peerBF.count) done=\(completed.popcount)"
+                    )
+                }
+                break
+            }
 
-            // Start piece if not in progress
             let inProg = await pm.isInProgress(pieceIndex)
             let hasPc = await pm.hasPiece(pieceIndex)
             if !inProg && !hasPc {
                 await pm.startPiece(pieceIndex)
+                TorrentLog.piece("startPiece \(pieceIndex) via \(key)")
             }
 
             let pieceSize = await pm.expectedPieceSize(pieceIndex)
             let blockSize = 16384
             var offset = 0
+            var sent = false
             while offset < pieceSize {
                 let canReq = await state.canRequest
                 guard canReq else { break }
                 let length = min(blockSize, pieceSize - offset)
+                if await pm.hasReceivedBlock(pieceIndex: pieceIndex, offset: offset) {
+                    offset += blockSize
+                    continue
+                }
                 let request = PeerState.BlockRequest(pieceIndex: pieceIndex, offset: offset, length: length)
                 if !(await state.hasPending(request)) {
                     await state.addPendingRequest(request)
@@ -265,23 +363,45 @@ public actor PeerManager {
                         begin: UInt32(offset),
                         length: UInt32(length)
                     ))
+                    sent = true
+                    requestedBlocks += 1
                 }
                 offset += blockSize
             }
-            break // One piece at a time per fill cycle
+            if !sent { break }
+            break
         }
+        if requestedBlocks > 0 {
+            TorrentLog.piece("requested \(requestedBlocks) blocks ← \(key)")
+        }
+    }
+
+    private func shouldLogNoPick(for key: String) -> Bool {
+        let now = ContinuousClock.now
+        if let last = lastNoPickLog[key], now - last < .seconds(5) {
+            return false
+        }
+        lastNoPickLog[key] = now
+        return true
     }
 
     private func onPieceComplete(index pieceIndex: Int, data: Data) async {
         guard let pm = pieceManager else { return }
         let verified = await pm.completePiece(pieceIndex)
         if verified {
-            // Write to disk
+            TorrentLog.piece("COMPLETE piece \(pieceIndex) (\(data.count) bytes)")
             if let dio = diskIO {
-                try? await dio.writePiece(index: pieceIndex, data: data)
+                do {
+                    try await dio.writePiece(index: pieceIndex, data: data)
+                    TorrentLog.storage("wrote piece \(pieceIndex)")
+                } catch {
+                    TorrentLog.error("Storage", "writePiece \(pieceIndex) failed: \(error)")
+                }
             }
             await broadcastHave(pieceIndex: UInt32(pieceIndex))
             onPieceCompleted?(pieceIndex)
+        } else {
+            TorrentLog.error("Piece", "HASH FAIL piece \(pieceIndex) (\(data.count) bytes)")
         }
     }
 

@@ -10,6 +10,8 @@ public actor PieceManager {
     private var completed: Bitfield
     private var inProgress: Set<Int>
     private var pieceBuffers: [Int: Data]
+    /// Byte offsets already written into each in-progress piece (detect full receipt).
+    private var receivedOffsets: [Int: Set<Int>]
 
     public init(info: TorrentInfo) {
         self.pieceCount = info.pieceCount
@@ -19,12 +21,14 @@ public actor PieceManager {
         self.completed = Bitfield(count: info.pieceCount)
         self.inProgress = []
         self.pieceBuffers = [:]
+        self.receivedOffsets = [:]
     }
 
     /// Mark a piece as being downloaded.
     public func startPiece(_ index: Int) {
         inProgress.insert(index)
         pieceBuffers[index] = Data()
+        receivedOffsets[index] = []
     }
 
     /// Add a block to a piece being downloaded.
@@ -37,11 +41,24 @@ public actor PieceManager {
         }
         buffer.replaceSubrange(offset..<offset + data.count, with: data)
         pieceBuffers[pieceIndex] = buffer
+        receivedOffsets[pieceIndex, default: []].insert(offset)
+    }
+
+    /// Whether every block for `index` has been received (not just buffer length).
+    public func hasAllBlocks(_ index: Int) -> Bool {
+        let size = expectedPieceSize(index)
+        guard size > 0 else { return true }
+        let expectedOffsets = Set(stride(from: 0, to: size, by: 16384))
+        return receivedOffsets[index] == expectedOffsets
+    }
+
+    public func hasReceivedBlock(pieceIndex: Int, offset: Int) -> Bool {
+        receivedOffsets[pieceIndex]?.contains(offset) ?? false
     }
 
     /// Verify and complete a piece.
     public func completePiece(_ index: Int) -> Bool {
-        guard let buffer = pieceBuffers[index] else { return false }
+        guard let buffer = pieceBuffers[index], hasAllBlocks(index) else { return false }
 
         // Verify hash
         let expectedHash = pieceHashes.subdata(in: index * 20..<(index + 1) * 20)
@@ -50,6 +67,7 @@ public actor PieceManager {
         guard actualHash == expectedHash else {
             // Hash mismatch — piece is corrupt
             pieceBuffers.removeValue(forKey: index)
+            receivedOffsets.removeValue(forKey: index)
             inProgress.remove(index)
             return false
         }
@@ -57,6 +75,7 @@ public actor PieceManager {
         completed.set(index)
         inProgress.remove(index)
         pieceBuffers.removeValue(forKey: index)
+        receivedOffsets.removeValue(forKey: index)
         return true
     }
 

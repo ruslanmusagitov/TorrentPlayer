@@ -12,6 +12,8 @@ import SwiftTorrent
 
 struct TorrentFileItem: Identifiable, Equatable, Sendable {
     let id: Int
+    /// Relative path within the torrent (may include directories).
+    let path: String
     let name: String
     let size: Int64
     let detail: String
@@ -75,6 +77,7 @@ enum TorrentFileFormatting {
     static func makeFileItem(index: Int, path: String, length: Int64) -> TorrentFileItem {
         TorrentFileItem(
             id: index,
+            path: path,
             name: fileName(from: path),
             size: length,
             detail: fileDetail(size: length, path: path)

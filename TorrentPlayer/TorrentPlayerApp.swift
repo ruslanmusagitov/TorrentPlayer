@@ -14,6 +14,7 @@ struct TorrentPlayerApp: App {
             ContentView()
                 .environment(engine)
                 .task {
+                    TPLog.bootstrapFileLogging()
                     await engine.bootstrap()
                 }
         }

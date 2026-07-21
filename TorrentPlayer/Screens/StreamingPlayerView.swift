@@ -2,13 +2,20 @@
 //  StreamingPlayerView.swift
 //  TorrentPlayer
 //
-//  Stub: design/streaming_player/
+//  design/streaming_player/ — Task #7: AVPlayer over local HTTP stream.
 //
 
 import SwiftUI
+#if os(macOS)
+import AVKit
+#endif
 
 struct StreamingPlayerView: View {
+    @Environment(TorrentEngine.self) private var engine
     @State private var isPlaying = true
+    #if os(macOS)
+    @State private var player: AVPlayer?
+    #endif
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     private var statsColumnCount: Int {
@@ -20,18 +27,28 @@ struct StreamingPlayerView: View {
     }
 
     private var stats: [(label: String, value: String, color: Color)] {
-        [
-            ("DL_SPEED", "12.4 MB/s", KTColor.primary),
-            ("PEERS_CONNECTED", "156 SEED / 42 LEECH", KTColor.secondary),
-            ("ETA_REMAINING", "00:04:22", KTColor.onBackground),
-            ("PROTOCOL", "UTP_V2_ENCRYPTED", KTColor.tertiary),
+        let speed = formatRate(engine.downloadRateBytes)
+        let peers = engine.peersConnected > 0 ? "\(engine.peersConnected)" : "—"
+        let pieces = engine.piecesTotal > 0
+            ? "\(engine.piecesCompleted)/\(engine.piecesTotal)"
+            : "—"
+        let protocolLabel = engine.usesExternalPlayer ? "VLC_HTTP" : "LOCAL_HTTP"
+        return [
+            ("DL_SPEED", speed, KTColor.primary),
+            ("PEERS_CONNECTED", peers, KTColor.secondary),
+            ("PIECES", pieces, KTColor.onBackground),
+            ("PROTOCOL", protocolLabel, KTColor.tertiary),
         ]
+    }
+
+    private var titleText: String {
+        engine.selectedFile?.name ?? "NO_VIDEO_SELECTED"
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: KTSpacing.md) {
-                Text("S04E12_HIGH_VELOCITY_STREAM_X265.MKV")
+                Text(titleText)
                     .font(KTTypography.headlineLGMobile())
                     .foregroundStyle(KTColor.onSecondary)
                     .italic()
@@ -53,6 +70,26 @@ struct StreamingPlayerView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(KTColor.background)
+        #if os(macOS)
+        .task(id: engine.selectedFileID) {
+            await engine.preparePlayback()
+        }
+        .task(id: engine.playbackPhase) {
+            while !Task.isCancelled {
+                await engine.refreshDownloadStatus()
+                try? await Task.sleep(for: .seconds(1))
+                if engine.playbackPhase == .idle { break }
+            }
+        }
+        .onChange(of: engine.playbackURL) { _, url in
+            rebuildPlayer(with: url)
+        }
+        .onDisappear {
+            player?.pause()
+            player = nil
+            engine.stopPlayback()
+        }
+        #endif
     }
 
     private var playerCanvas: some View {
@@ -63,19 +100,19 @@ struct StreamingPlayerView: View {
                 endPoint: .bottomTrailing
             )
 
-            VStack(spacing: KTSpacing.sm) {
-                Image(systemName: "play.rectangle.fill")
-                    .font(.system(size: 56))
-                    .foregroundStyle(.white.opacity(0.85))
-                Text("VIDEO STUB")
-                    .font(KTTypography.technicalSM())
-                    .foregroundStyle(.white.opacity(0.7))
-                    .tracking(2)
+            #if os(macOS)
+            if let player, !engine.usesExternalPlayer {
+                VideoPlayer(player: player)
+            } else {
+                playbackPlaceholder
             }
+            #else
+            playbackPlaceholder
+            #endif
 
             VStack {
                 HStack {
-                    Text("● LIVE")
+                    Text(liveBadgeText)
                         .font(KTTypography.technicalSM())
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8)
@@ -91,7 +128,7 @@ struct StreamingPlayerView: View {
                         fill: KTColor.primaryContainer,
                         tint: KTColor.onPrimaryContainer
                     ) {
-                        isPlaying.toggle()
+                        togglePlayPause()
                     }
                     controlButton(systemImage: "backward.fill", fill: .white, tint: KTColor.onBackground) {}
                     controlButton(systemImage: "forward.fill", fill: .white, tint: KTColor.onBackground) {}
@@ -120,12 +157,68 @@ struct StreamingPlayerView: View {
         .thickBorder()
     }
 
+    private var playbackPlaceholder: some View {
+        VStack(spacing: KTSpacing.sm) {
+            Image(systemName: placeholderIcon)
+                .font(.system(size: 56))
+                .foregroundStyle(.white.opacity(0.85))
+            Text(placeholderLabel)
+                .font(KTTypography.technicalSM())
+                .foregroundStyle(.white.opacity(0.7))
+                .tracking(2)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, KTSpacing.md)
+        }
+    }
+
+    private var liveBadgeText: String {
+        switch engine.playbackPhase {
+        case .ready:
+            "● LIVE"
+        case .buffering:
+            "● BUFFERING"
+        case .failed:
+            "● ERROR"
+        case .idle:
+            "● IDLE"
+        }
+    }
+
+    private var placeholderIcon: String {
+        switch engine.playbackPhase {
+        case .failed:
+            "exclamationmark.triangle.fill"
+        case .buffering:
+            "arrow.down.circle"
+        default:
+            "play.rectangle.fill"
+        }
+    }
+
+    private var placeholderLabel: String {
+        switch engine.playbackPhase {
+        case let .failed(message):
+            return message.uppercased()
+        case .buffering:
+            let pct = Int(engine.downloadProgress * 100)
+            return "BUFFERING \(pct)% • \(engine.piecesCompleted) PIECES"
+        case .idle:
+            return "WAITING FOR STREAM"
+        case .ready:
+            if engine.usesExternalPlayer {
+                return "OPENED IN EXTERNAL PLAYER (VLC)"
+            } else {
+                return "STARTING…"
+            }
+        }
+    }
+
     private var progressSection: some View {
         VStack(alignment: .leading, spacing: KTSpacing.xs) {
             HStack {
-                Text("00:42:15")
+                Text("00:00:00")
                 Spacer()
-                Text("01:58:30")
+                Text("--:--:--")
             }
             .font(KTTypography.technicalMD().weight(.bold))
             .textCase(.uppercase)
@@ -135,11 +228,11 @@ struct StreamingPlayerView: View {
                     HazardStripes()
                         .frame(width: geo.size.width * 0.75)
                     KTColor.tertiaryContainer
-                        .frame(width: geo.size.width * 0.35)
+                        .frame(width: geo.size.width * 0.05)
                     Rectangle()
                         .fill(KTColor.primary)
                         .frame(width: 6, height: 40)
-                        .offset(x: geo.size.width * 0.35 - 3, y: -4)
+                        .offset(x: geo.size.width * 0.05 - 3, y: -4)
                         .overlay(Rectangle().strokeBorder(KTColor.onBackground, lineWidth: 2))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -175,12 +268,7 @@ struct StreamingPlayerView: View {
                     .italic()
                     .textCase(.uppercase)
             }
-            Text("""
-            SOURCE: HD_BLURAY_REMUX
-            CODEC: HEVC_MAIN_10@L5.1@HIGH
-            AUDIO: DTS-HD_MASTER_7.1_48KHZ
-            CONTAINER: MATROSKA_VERSION_4
-            """)
+            Text(streamInfoText)
             .font(KTTypography.technicalSM())
             .foregroundStyle(KTColor.onSurfaceVariant)
         }
@@ -190,6 +278,55 @@ struct StreamingPlayerView: View {
         .thickBorder()
         .hardShadow()
     }
+
+    private var streamInfoText: String {
+        let path = engine.selectedFile?.path ?? "—"
+        let url = engine.playbackURL?.absoluteString ?? "—"
+        let player = engine.usesExternalPlayer ? "EXTERNAL_VLC" : "AVPLAYER"
+        return """
+        FILE: \(path)
+        SOURCE: LOCAL_HTTP_LOOPBACK
+        PLAYER: \(player)
+        PLAYBACK_URL: \(url)
+        """
+    }
+
+    private func formatRate(_ bytesPerSecond: Double) -> String {
+        guard bytesPerSecond > 0 else { return "—" }
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        return formatter.string(fromByteCount: Int64(bytesPerSecond)) + "/s"
+    }
+
+    private func togglePlayPause() {
+        #if os(macOS)
+        guard let player else {
+            isPlaying.toggle()
+            return
+        }
+        if isPlaying {
+            player.pause()
+        } else {
+            player.play()
+        }
+        #endif
+        isPlaying.toggle()
+    }
+
+    #if os(macOS)
+    private func rebuildPlayer(with url: URL?) {
+        player?.pause()
+        guard let url, !engine.usesExternalPlayer else {
+            player = nil
+            return
+        }
+        let next = AVPlayer(url: url)
+        player = next
+        next.play()
+        isPlaying = true
+    }
+    #endif
 
     private func statCell(label: String, value: String, valueColor: Color) -> some View {
         VStack(alignment: .leading, spacing: KTSpacing.xs) {
@@ -232,4 +369,5 @@ struct StreamingPlayerView: View {
 
 #Preview {
     StreamingPlayerView()
+        .environment(TorrentEngine())
 }

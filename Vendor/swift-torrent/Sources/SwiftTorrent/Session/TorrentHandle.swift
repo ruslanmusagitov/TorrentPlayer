@@ -74,6 +74,15 @@ public actor TorrentHandle {
             pieceManager: pm, piecePicker: pp, diskIO: dio,
             pieceCount: info.pieceCount
         )
+        await peerManager.setOnPieceCompleted { [weak self] index in
+            Task { await self?.notePieceDownloaded(index: index) }
+        }
+    }
+
+    private func notePieceDownloaded(index: Int) async {
+        guard let pm = pieceManager else { return }
+        totalDownloaded += Int64(await pm.expectedPieceSize(index))
+        lastDownloadRateSample += Int64(await pm.expectedPieceSize(index))
     }
 
     /// Complete initialization for .torrent-file init path (must be called after init).
@@ -108,7 +117,8 @@ public actor TorrentHandle {
 
         // Announce to trackers
         if let trackerMgr = trackerManager {
-            let left = info?.totalSize ?? 0
+            // Magnet announce before metadata: left must be > 0 or trackers treat us as a seeder.
+            let left = info?.totalSize ?? (1 << 30)
             let params = AnnounceParams(
                 infoHash: infoHash, peerID: peerID, port: 6881,
                 left: left - totalDownloaded, event: "started"
@@ -119,16 +129,42 @@ public actor TorrentHandle {
     }
 
     private func onMetadataReceived(info: TorrentInfo) async {
+        // Duplicate ut_metadata completions must not reset the picker / drop peers.
+        if self.info != nil, pieceManager != nil {
+            TorrentLog.session("onMetadataReceived ignored (already set up)")
+            return
+        }
+
+        TorrentLog.session(
+            "onMetadataReceived name=\(info.name) pieces=\(info.pieceCount) pieceLength=\(info.pieceLength) size=\(info.totalSize)"
+        )
         await setupDownloadComponents(info: info)
         state = .downloading
+        // Stop magnet metadata exchange — further extended messages are noise.
+        metadataExchange = nil
+        await peerManager.clearMetadataExchange()
         try? await diskIO?.allocateFiles()
         startDownloadMonitor()
 
-        // Resume all waiting metadata continuations
+        // Metadata-era peers used pieceCount=0/1 and are not useful for piece download.
+        TorrentLog.session("disconnecting metadata-era peers")
+        await peerManager.disconnectAll()
+
+        // Resume waiters so the app can prioritizeFile before new peers arrive.
         let conts = metadataContinuations
         metadataContinuations.removeAll()
         for (_, cont) in conts {
             cont.resume(returning: info)
+        }
+
+        // Re-announce with the real size so we get download peers.
+        if let trackerMgr = trackerManager {
+            let params = AnnounceParams(
+                infoHash: infoHash, peerID: peerID, port: 6881,
+                left: info.totalSize, event: "started"
+            )
+            TorrentLog.session("re-announce after metadata left=\(info.totalSize)")
+            await announceToAllTrackers(trackerMgr: trackerMgr, params: params)
         }
     }
 
@@ -143,8 +179,20 @@ public actor TorrentHandle {
                     break
                 }
                 await self.peerManager.checkTimeouts()
+                // Rough rate from bytes completed in this monitor tick.
+                let sample = await self.lastDownloadRateSample
+                await self.setDownloadRate(Double(sample) / 2.0)
+                await self.resetDownloadRateSample()
             }
         }
+    }
+
+    private func setDownloadRate(_ rate: Double) {
+        downloadRate = rate
+    }
+
+    private func resetDownloadRateSample() {
+        lastDownloadRateSample = 0
     }
 
     private func checkCompletion() async -> Bool {
@@ -167,9 +215,12 @@ public actor TorrentHandle {
     /// Announce to all tracker tiers concurrently.
     private func announceToAllTrackers(trackerMgr: TrackerManager, params: AnnounceParams) async {
         if let response = try? await trackerMgr.announce(params: params) {
+            TorrentLog.session("announce OK peers=\(response.peers.count) interval=\(response.interval)")
             for (address, port) in response.peers {
                 await peerManager.addPeer(address: address, port: port)
             }
+        } else {
+            TorrentLog.error("Session", "announce failed or empty response")
         }
     }
 
@@ -238,7 +289,7 @@ public actor TorrentHandle {
             totalDownloaded: totalDownloaded,
             totalUploaded: totalUploaded,
             totalSize: info?.totalSize ?? 0,
-            numPeers: await peerManager.connectionCount,
+            numPeers: await peerManager.connectedCount,
             numSeeds: 0,
             piecesCompleted: completed?.popcount ?? 0,
             piecesTotal: info?.pieceCount ?? 0
@@ -248,10 +299,19 @@ public actor TorrentHandle {
     /// Download only pieces belonging to `fileIndex`, in start→end order when `sequential` is true.
     /// No-op if metadata is missing or the file index is invalid.
     public func prioritizeFile(_ fileIndex: Int, sequential: Bool = true) async {
-        guard let info else { return }
+        guard let info else {
+            TorrentLog.session("prioritizeFile(\(fileIndex)) skipped — no metadata")
+            return
+        }
         let storage = FileStorage(info: info)
-        guard let range = storage.pieceRange(forFileIndex: fileIndex) else { return }
+        guard let range = storage.pieceRange(forFileIndex: fileIndex) else {
+            TorrentLog.session("prioritizeFile(\(fileIndex)) skipped — invalid file index")
+            return
+        }
         let mode: PiecePickMode = sequential ? .sequential : .rarestFirst
+        TorrentLog.session(
+            "prioritizeFile(\(fileIndex)) range=\(range.lowerBound)..<\(range.upperBound) mode=\(mode) piecesTotal=\(info.pieceCount)"
+        )
 
         await peerManager.applyPiecePriority(range: range, mode: mode)
         if var local = piecePicker {
@@ -263,6 +323,59 @@ public actor TorrentHandle {
     /// Returns the file entries for this torrent, or nil if metadata is not yet available.
     public func getFiles() -> [TorrentInfo.FileEntry]? {
         info?.files
+    }
+
+    /// Returns a single file entry, or nil if metadata is missing / index is out of range.
+    public func fileEntry(at index: Int) -> TorrentInfo.FileEntry? {
+        guard let files = info?.files, index >= 0, index < files.count else { return nil }
+        return files[index]
+    }
+
+    /// Absolute on-disk path for `fileIndex` under this handle's save path.
+    public func filePath(forFileIndex index: Int) -> String? {
+        guard let entry = fileEntry(at: index) else { return nil }
+        return (savePath as NSString).appendingPathComponent(entry.path)
+    }
+
+    /// Whether every piece in `range` is complete.
+    public func hasContiguousPieces(_ range: Range<Int>) async -> Bool {
+        guard let pm = pieceManager else { return false }
+        for index in range {
+            if !(await pm.hasPiece(index)) { return false }
+        }
+        return true
+    }
+
+    /// Waits until the leading `bytes` of `fileIndex` are on disk (contiguous pieces), or throws `TorrentError.timeout`.
+    public func waitForLeadingBytes(fileIndex: Int, bytes: Int64, timeout seconds: Int) async throws {
+        try await waitForFileBytes(fileIndex: fileIndex, fileOffset: 0, length: bytes, timeout: seconds)
+    }
+
+    /// Waits until `[fileOffset, fileOffset + length)` within `fileIndex` is on disk, or throws `TorrentError.timeout`.
+    public func waitForFileBytes(
+        fileIndex: Int,
+        fileOffset: Int64,
+        length: Int64,
+        timeout seconds: Int
+    ) async throws {
+        guard let info else { throw TorrentError.timeout }
+        let storage = FileStorage(info: info)
+        guard let range = storage.pieceRange(
+            forFileIndex: fileIndex,
+            fileOffset: fileOffset,
+            length: length
+        ) else {
+            throw TorrentError.timeout
+        }
+
+        if await hasContiguousPieces(range) { return }
+
+        let deadline = ContinuousClock.now + .seconds(seconds)
+        while ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(200))
+            if await hasContiguousPieces(range) { return }
+        }
+        throw TorrentError.timeout
     }
 
     /// Generate resume data for saving state.

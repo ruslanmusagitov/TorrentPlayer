@@ -6,11 +6,13 @@
 //  Task #4: metadata fetch and file list.
 //  Task #5: video file selection.
 //  Task #6: sequential download of selected file.
+//  Task #7: local HTTP stream bridge → AVPlayer.
 //
 
 import Foundation
 import Observation
 #if os(macOS)
+import AppKit
 import SwiftTorrent
 #endif
 
@@ -28,26 +30,72 @@ final class TorrentEngine {
         case error(String)
     }
 
+    enum PlaybackPhase: Equatable {
+        case idle
+        case buffering
+        case ready
+        case failed(String)
+    }
+
     private(set) var phase: Phase = .idle
     private(set) var lastMagnetURI: String?
     private(set) var activeTorrent: ActiveTorrent?
     private(set) var selectedFileID: Int?
+    private(set) var playbackPhase: PlaybackPhase = .idle
+    private(set) var playbackURL: URL?
+    private(set) var downloadProgress: Double = 0
+    private(set) var downloadRateBytes: Double = 0
+    private(set) var peersConnected: Int = 0
+    private(set) var piecesCompleted: Int = 0
+    private(set) var piecesTotal: Int = 0
+    private(set) var usesExternalPlayer: Bool = false
 
     var selectedFile: TorrentFileItem? {
         guard let selectedFileID, let activeTorrent else { return nil }
         return activeTorrent.files.first { $0.id == selectedFileID && $0.isVideo }
     }
 
+    /// On-disk URL for the selected video under Application Support downloads.
+    var selectedFileURL: URL? {
+        guard let selectedFile else { return nil }
+        guard let downloads = try? Self.downloadsDirectory() else { return nil }
+        return LocalHTTPStreamServer.diskURL(
+            downloadsDirectory: downloads,
+            relativePath: selectedFile.path
+        )
+    }
+
+    /// AVPlayer only handles a few containers; MKV/AVI/etc. need an external player (e.g. VLC).
+    static func isAVPlayerCompatible(path: String) -> Bool {
+        switch (path as NSString).pathExtension.lowercased() {
+        case "mp4", "m4v", "mov":
+            true
+        default:
+            false
+        }
+    }
+
     #if os(macOS)
     private var session: Session?
     private var activeHandle: TorrentHandle?
     private var activeInfoHash: InfoHash?
+    private var streamServer: LocalHTTPStreamServer?
+    private var playbackGeneration: UInt64 = 0
+    private var byteGateAdvanceTask: Task<Void, Never>?
     #endif
 
     private let metadataTimeoutSeconds: Int
+    private let streamingLeadBytes: Int64
+    private let streamingLeadTimeoutSeconds: Int
 
-    init(metadataTimeoutSeconds: Int = 10) {
+    init(
+        metadataTimeoutSeconds: Int = 10,
+        streamingLeadBytes: Int64 = 2 * 1024 * 1024,
+        streamingLeadTimeoutSeconds: Int = 120
+    ) {
         self.metadataTimeoutSeconds = metadataTimeoutSeconds
+        self.streamingLeadBytes = streamingLeadBytes
+        self.streamingLeadTimeoutSeconds = streamingLeadTimeoutSeconds
     }
 
     var isLoadingTorrent: Bool {
@@ -93,6 +141,9 @@ final class TorrentEngine {
         guard let activeTorrent,
               activeTorrent.videoFiles.contains(where: { $0.id == id })
         else { return }
+        if selectedFileID != id {
+            stopPlayback()
+        }
         selectedFileID = id
         #if os(macOS)
         Task { await applySequentialPriorityForSelection() }
@@ -122,13 +173,16 @@ final class TorrentEngine {
             let session = Session(settings: settings)
             do {
                 try await session.startDHT()
+                TPLog.engine("DHT started")
             } catch {
-                // DHT is optional for magnets that include tracker URLs.
+                TPLog.engine("DHT start failed (optional): \(error.localizedDescription)")
             }
             self.session = session
             phase = .ready
+            TPLog.engine("Session ready savePath=\(downloads.path)")
         } catch {
             phase = .error(error.localizedDescription)
+            TPLog.error("bootstrap failed: \(error.localizedDescription)")
         }
         #else
         phase = .unsupportedPlatform
@@ -148,6 +202,8 @@ final class TorrentEngine {
             throw TorrentEngineError.sessionNotReady
         }
 
+        stopPlayback()
+
         let previousTorrent = activeTorrent
         let previousInfoHash = activeInfoHash
         let previousSelectedFileID = selectedFileID
@@ -155,6 +211,7 @@ final class TorrentEngine {
         phase = .adding
         var pendingInfoHash: InfoHash?
         await Task.yield()
+        TPLog.engine("addMagnet begin uriLen=\(trimmed.count)")
 
         do {
             let downloads = try Self.downloadsDirectory()
@@ -163,6 +220,7 @@ final class TorrentEngine {
                 throw AddTorrentError.noInfoHash
             }
             pendingInfoHash = infoHash
+            TPLog.engine("addMagnet infoHash=\(infoHash)")
 
             let handle = try await session.addTorrent(params)
             activeHandle = handle
@@ -172,6 +230,7 @@ final class TorrentEngine {
             let info: TorrentInfo
             do {
                 info = try await handle.waitForMetadata(timeout: metadataTimeoutSeconds)
+                TPLog.engine("metadata OK name=\(info.name) files=\(info.files.count) pieces=\(info.pieceCount)")
             } catch is TorrentError {
                 await session.removeTorrent(infoHash)
                 pendingInfoHash = nil
@@ -232,7 +291,166 @@ final class TorrentEngine {
         #endif
     }
 
+    /// Waits for leading sequential bytes, then starts a loopback HTTP server for AVPlayer.
+    func preparePlayback() async {
+        #if os(macOS)
+        stopPlayback()
+        let generation = playbackGeneration
+
+        guard let file = selectedFile, let handle = activeHandle else {
+            playbackPhase = .failed(TorrentEngineError.noSelectedFile.localizedDescription)
+            return
+        }
+        guard let diskURL = selectedFileURL else {
+            playbackPhase = .failed(TorrentEngineError.noSelectedFile.localizedDescription)
+            return
+        }
+
+        playbackPhase = .buffering
+        let fileIndex = file.id
+        let leadBytes = min(streamingLeadBytes, max(file.size, 1))
+        usesExternalPlayer = !Self.isAVPlayerCompatible(path: file.path)
+        TPLog.playback(
+            "preparePlayback file=\(file.path) index=\(fileIndex) leadBytes=\(leadBytes) external=\(usesExternalPlayer) disk=\(diskURL.path)"
+        )
+
+        do {
+            await applySequentialPriorityForSelection()
+            try await waitForLeadingBytesPolling(
+                handle: handle,
+                fileIndex: fileIndex,
+                bytes: leadBytes,
+                generation: generation
+            )
+            guard generation == playbackGeneration else {
+                TPLog.playback("preparePlayback aborted (stale generation after lead wait)")
+                return
+            }
+
+            // HTTP handlers must not await TorrentHandle — under peer load that stalls
+            // every VLC/browser request. Lead bytes are already on disk; a background
+            // task advances the gate as more contiguous bytes arrive.
+            let gate = StreamingByteGate()
+            gate.markReady(through: leadBytes)
+            let waiter: LocalHTTPStreamServer.ByteWaiter = { offset, length in
+                gate.isReady(offset: offset, length: length)
+            }
+
+            let server = LocalHTTPStreamServer(
+                fileURL: diskURL,
+                fileSize: file.size,
+                contentType: LocalHTTPStreamServer.contentType(forPath: file.path),
+                waitForBytes: waiter
+            )
+            try await server.start()
+            guard generation == playbackGeneration else {
+                server.stop()
+                TPLog.playback("preparePlayback aborted (stale generation after server start)")
+                return
+            }
+            guard let url = server.streamURL else {
+                server.stop()
+                throw TorrentEngineError.playbackServerFailed("No port bound")
+            }
+            streamServer = server
+            playbackURL = url
+            playbackPhase = .ready
+            startByteGateAdvance(
+                gate: gate,
+                handle: handle,
+                fileIndex: fileIndex,
+                fileSize: file.size,
+                from: leadBytes,
+                generation: generation
+            )
+            TPLog.playback("stream ready url=\(url.absoluteString) lead=\(leadBytes)")
+
+            if usesExternalPlayer {
+                openInExternalPlayer(url)
+            }
+        } catch is TorrentError {
+            guard generation == playbackGeneration else { return }
+            TPLog.error("playback buffer timeout")
+            playbackPhase = .failed(TorrentEngineError.playbackBufferTimeout.localizedDescription)
+        } catch let error as TorrentEngineError {
+            guard generation == playbackGeneration else { return }
+            TPLog.error("playback failed: \(error.localizedDescription)")
+            playbackPhase = .failed(error.localizedDescription)
+        } catch {
+            guard generation == playbackGeneration else { return }
+            TPLog.error("playback server failed: \(error.localizedDescription)")
+            playbackPhase = .failed(
+                TorrentEngineError.playbackServerFailed(error.localizedDescription).localizedDescription
+            )
+        }
+        #else
+        playbackPhase = .failed(TorrentEngineError.unsupportedPlatform.localizedDescription)
+        #endif
+    }
+
+    func stopPlayback() {
+        #if os(macOS)
+        playbackGeneration += 1
+        byteGateAdvanceTask?.cancel()
+        byteGateAdvanceTask = nil
+        streamServer?.stop()
+        streamServer = nil
+        #endif
+        playbackURL = nil
+        playbackPhase = .idle
+        usesExternalPlayer = false
+    }
+
+    func refreshDownloadStatus() async {
+        #if os(macOS)
+        guard let handle = activeHandle else {
+            downloadProgress = 0
+            downloadRateBytes = 0
+            peersConnected = 0
+            piecesCompleted = 0
+            piecesTotal = 0
+            return
+        }
+        let status = await handle.status()
+        downloadProgress = status.progress
+        downloadRateBytes = status.downloadRate
+        peersConnected = status.numPeers
+        piecesCompleted = status.piecesCompleted
+        piecesTotal = status.piecesTotal
+        if playbackPhase == .buffering {
+            TPLog.playback(
+                "status peers=\(status.numPeers) pieces=\(status.piecesCompleted)/\(status.piecesTotal) progress=\(String(format: "%.4f", status.progress)) rate=\(Int(status.downloadRate))B/s"
+            )
+        }
+        #endif
+    }
+
     #if os(macOS)
+    private func waitForLeadingBytesPolling(
+        handle: TorrentHandle,
+        fileIndex: Int,
+        bytes: Int64,
+        generation: UInt64
+    ) async throws {
+        let deadline = ContinuousClock.now + .seconds(streamingLeadTimeoutSeconds)
+        while ContinuousClock.now < deadline {
+            guard generation == playbackGeneration else { return }
+            await refreshDownloadStatus()
+            do {
+                try await handle.waitForLeadingBytes(
+                    fileIndex: fileIndex,
+                    bytes: bytes,
+                    timeout: 2
+                )
+                await refreshDownloadStatus()
+                return
+            } catch is TorrentError {
+                // keep polling until overall timeout
+            }
+        }
+        throw TorrentError.timeout
+    }
+
     /// Surfaces the failure while keeping a previously loaded torrent (if any)
     /// so Files can still show it; Load UI reads `phase == .error`.
     private func failOrRestore(
@@ -253,6 +471,72 @@ final class TorrentEngine {
     private func applySequentialPriorityForSelection() async {
         guard let handle = activeHandle, let selectedFileID else { return }
         await handle.prioritizeFile(selectedFileID, sequential: true)
+    }
+
+    /// Extends `gate` as sequential torrent bytes become available (off the HTTP path).
+    private func startByteGateAdvance(
+        gate: StreamingByteGate,
+        handle: TorrentHandle,
+        fileIndex: Int,
+        fileSize: Int64,
+        from startOffset: Int64,
+        generation: UInt64
+    ) {
+        byteGateAdvanceTask?.cancel()
+        byteGateAdvanceTask = Task.detached { [weak self] in
+            let step: Int64 = 256 * 1024
+            var cursor = startOffset
+            while !Task.isCancelled, cursor < fileSize {
+                guard let self, await self.isPlaybackGeneration(generation) else { return }
+                let length = min(step, fileSize - cursor)
+                do {
+                    try await handle.waitForFileBytes(
+                        fileIndex: fileIndex,
+                        fileOffset: cursor,
+                        length: length,
+                        timeout: 2
+                    )
+                    cursor += length
+                    gate.markReady(through: cursor)
+                } catch {
+                    try? await Task.sleep(for: .milliseconds(200))
+                }
+            }
+            TPLog.playback("byte gate reached end offset=\(cursor)")
+        }
+    }
+
+    private func isPlaybackGeneration(_ generation: UInt64) -> Bool {
+        generation == playbackGeneration
+    }
+
+    /// MKV/AVI are opened in VLC. `NSWorkspace.shared.open(url)` uses the default
+    /// http(s) handler (Safari/Chrome) and will not play Matroska.
+    private func openInExternalPlayer(_ url: URL) {
+        let candidates = [
+            URL(fileURLWithPath: "/Applications/VLC.app"),
+            URL(fileURLWithPath: NSHomeDirectory() + "/Applications/VLC.app"),
+        ]
+        guard let vlc = candidates.first(where: {
+            FileManager.default.fileExists(atPath: $0.path)
+        }) else {
+            TPLog.error("VLC.app not found — install VLC or open \(url.absoluteString) manually")
+            playbackPhase = .failed(
+                "VLC not found. Install VLC from videolan.org, then try Stream Now again."
+            )
+            return
+        }
+        TPLog.playback("opening VLC at \(vlc.path) url=\(url.absoluteString)")
+        let configuration = NSWorkspace.OpenConfiguration()
+        NSWorkspace.shared.open(
+            [url],
+            withApplicationAt: vlc,
+            configuration: configuration
+        ) { _, error in
+            if let error {
+                TPLog.error("VLC open failed: \(error.localizedDescription)")
+            }
+        }
     }
     #endif
 
