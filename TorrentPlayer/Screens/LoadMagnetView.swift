@@ -63,13 +63,16 @@ struct LoadMagnetView: View {
                     }
 
                     BrutalPrimaryButton(
-                        title: isLoading ? "Loading…" : "Load Magnet",
+                        title: engine.isLoadingTorrent || isLoading ? "Loading…" : "Load Magnet",
                         systemImage: "bolt.fill",
                         largeShadow: true
                     ) {
-                        Task { await loadMagnet() }
+                        Task { @MainActor in
+                            await loadMagnet()
+                        }
                     }
-                    .disabled(isLoading || !engine.isOperational)
+                    .disabled(isLoading || engine.isLoadingTorrent || !engine.isOperational)
+                    .opacity(isLoading || engine.isLoadingTorrent || !engine.isOperational ? 0.45 : 1)
                 }
 
                 awaitingStreamCard
@@ -92,8 +95,10 @@ struct LoadMagnetView: View {
             (KTColor.errorContainer, KTColor.error)
         case .unsupportedPlatform:
             (KTColor.secondaryFixed, KTColor.secondary)
-        case .ready, .added:
+        case .ready, .loaded:
             (KTColor.tertiaryContainer, KTColor.onTertiaryContainer)
+        case .fetchingMetadata, .adding:
+            (KTColor.primaryContainer, KTColor.onPrimary)
         default:
             (KTColor.surfaceContainer, KTColor.onSurfaceVariant)
         }
@@ -105,22 +110,51 @@ struct LoadMagnetView: View {
             VStack(spacing: KTSpacing.xs) {
                 Image(systemName: "sensor.tag.radiowaves.forward")
                     .font(.system(size: 48, weight: .regular))
-                if case let .added(name, hash) = engine.phase {
-                    Text(name.uppercased())
+                switch engine.phase {
+                case .fetchingMetadata, .adding:
+                    ProgressView()
+                        .controlSize(.regular)
+                        .tint(.white)
+                    Text("Fetching Metadata…")
+                        .font(KTTypography.technicalSM())
+                        .textCase(.uppercase)
+                        .tracking(2)
+                    Text("Contacting trackers / DHT for file list")
+                        .font(KTTypography.technicalSM())
+                        .opacity(0.8)
+                        .multilineTextAlignment(.center)
+                case let .loaded(torrent):
+                    Text(torrent.displayName.uppercased())
                         .font(KTTypography.technicalSM())
                         .multilineTextAlignment(.center)
                         .lineLimit(3)
                         .minimumScaleFactor(0.75)
-                    Text(hash)
+                    Text("\(torrent.files.count) files • \(torrent.formattedTotalSize.uppercased())")
+                        .font(KTTypography.technicalSM())
+                        .opacity(0.8)
+                    Text(torrent.infoHash)
                         .font(KTTypography.technicalSM())
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .opacity(0.8)
-                } else {
+                case let .error(message):
+                    Text("LOAD FAILED")
+                        .font(KTTypography.technicalSM())
+                        .textCase(.uppercase)
+                        .tracking(2)
+                    Text(message)
+                        .font(KTTypography.technicalSM())
+                        .multilineTextAlignment(.center)
+                        .lineLimit(4)
+                        .opacity(0.9)
+                default:
                     Text("Awaiting Active Stream")
                         .font(KTTypography.technicalSM())
                         .textCase(.uppercase)
                         .tracking(2)
+                    Text("Paste a magnet, then tap Load Magnet")
+                        .font(KTTypography.technicalSM())
+                        .opacity(0.8)
                 }
             }
             .foregroundStyle(.white)
@@ -175,7 +209,7 @@ struct LoadMagnetView: View {
             try await engine.addMagnet(magnetText)
             onLoad?()
         } catch {
-            // Phase already updated on engine; keep user on screen to retry.
+            // Engine already set .error / restored previous torrent for UI feedback.
         }
     }
 }

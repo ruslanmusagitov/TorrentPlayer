@@ -41,16 +41,23 @@ struct BrutalPressStyle: ButtonStyle {
     var largeShadow: Bool = false
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .hardShadow(
-                configuration.isPressed
-                    ? 0
-                    : (largeShadow ? KTSpacing.shadowOffsetLarge : KTSpacing.shadowOffset)
-            )
-            .offset(
-                x: configuration.isPressed ? KTSpacing.shadowOffset : 0,
-                y: configuration.isPressed ? KTSpacing.shadowOffset : 0
-            )
+        let shadow = largeShadow ? KTSpacing.shadowOffsetLarge : KTSpacing.shadowOffset
+        // Fixed outer frame: moving the control on press cancels macOS mouse-up.
+        ZStack(alignment: .topLeading) {
+            if !configuration.isPressed {
+                Rectangle()
+                    .fill(KTColor.onBackground)
+                    .offset(x: shadow, y: shadow)
+            }
+            configuration.label
+                .offset(
+                    x: configuration.isPressed ? shadow : 0,
+                    y: configuration.isPressed ? shadow : 0
+                )
+        }
+        .padding(.trailing, shadow)
+        .padding(.bottom, shadow)
+        .contentShape(Rectangle())
     }
 }
 
@@ -183,26 +190,68 @@ struct MagnetURIEditor: UIViewRepresentable {
     }
 }
 #else
-struct MagnetURIEditor: View {
+import AppKit
+
+struct MagnetURIEditor: NSViewRepresentable {
     @Binding var text: String
 
-    private static let placeholder = "magnet:?xt=urn:btih:..."
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .noBorder
+        scroll.drawsBackground = false
 
-    var body: some View {
-        TextField(
-            "",
-            text: $text,
-            prompt: Text(Self.placeholder)
-                .font(KTTypography.technicalMD())
-                .foregroundStyle(KTColor.onBackground.opacity(0.4)),
-            axis: .vertical
+        let textView = NSTextView()
+        textView.delegate = context.coordinator
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+        textView.textColor = NSColor(KTColor.onBackground)
+        textView.backgroundColor = .clear
+        textView.drawsBackground = false
+        textView.textContainerInset = NSSize(width: 16, height: 36)
+        textView.string = text
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(
+            width: scroll.contentSize.width,
+            height: CGFloat.greatestFiniteMagnitude
         )
-        .font(KTTypography.technicalMD())
-        .autocorrectionDisabled()
-        .lineLimit(4...)
-        .padding(.top, 36)
-        .padding(.horizontal, KTSpacing.md)
-        .padding(.bottom, KTSpacing.md)
+
+        scroll.documentView = textView
+        context.coordinator.textView = textView
+        return scroll
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        guard let textView = nsView.documentView as? NSTextView else { return }
+        if textView.string != text {
+            textView.string = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        @Binding var text: String
+        weak var textView: NSTextView?
+
+        init(text: Binding<String>) {
+            _text = text
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView else { return }
+            text = textView.string
+        }
     }
 }
 #endif
