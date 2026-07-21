@@ -63,7 +63,20 @@ public final class PeerConnection: @unchecked Sendable {
         // Add the message encoder after handshake is sent
         try await ch.pipeline.addHandler(PeerMessageEncoder()).get()
 
-        // Store remote handshake info
+        // Wait until the peer's handshake is decoded — reading flags immediately
+        // races the inbound path and leaves supportsExtensions stuck at false,
+        // so magnet ut_metadata never starts.
+        let deadline = ContinuousClock.now + .seconds(10)
+        while ContinuousClock.now < deadline {
+            if decoder.isHandshakeReceived {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        guard decoder.isHandshakeReceived else {
+            throw PeerConnectionError.handshakeFailed
+        }
+
         self.remotePeerID = decoder.remotePeerID
         self.supportsExtensions = decoder.remoteSupportsExtensions
 
@@ -94,18 +107,41 @@ public enum PeerConnectionError: Error {
 final class PeerMessageDecoder: ByteToMessageDecoder {
     typealias InboundOut = PeerMessage
 
-    private var handshakeReceived = false
-    var remotePeerID: Data?
-    var remoteSupportsExtensions: Bool = false
+    private let lock = NSLock()
+    private var _handshakeReceived = false
+    private var _remotePeerID: Data?
+    private var _remoteSupportsExtensions = false
+
+    var isHandshakeReceived: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return _handshakeReceived
+    }
+
+    var remotePeerID: Data? {
+        lock.lock(); defer { lock.unlock() }
+        return _remotePeerID
+    }
+
+    var remoteSupportsExtensions: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return _remoteSupportsExtensions
+    }
 
     func decode(context: ChannelHandlerContext, buffer: inout ByteBuffer) throws -> DecodingState {
-        if !handshakeReceived {
+        let alreadyHadHandshake: Bool = {
+            lock.lock(); defer { lock.unlock() }
+            return _handshakeReceived
+        }()
+
+        if !alreadyHadHandshake {
             guard buffer.readableBytes >= Handshake.length else { return .needMoreData }
             guard let bytes = buffer.readBytes(length: Handshake.length) else { return .needMoreData }
             let handshake = try Handshake.decode(from: Data(bytes))
-            remotePeerID = handshake.peerID
-            remoteSupportsExtensions = (handshake.reserved[5] & 0x10) != 0
-            handshakeReceived = true
+            lock.lock()
+            _remotePeerID = handshake.peerID
+            _remoteSupportsExtensions = (handshake.reserved[5] & 0x10) != 0
+            _handshakeReceived = true
+            lock.unlock()
             return .continue
         }
 

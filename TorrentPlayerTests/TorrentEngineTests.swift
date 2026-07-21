@@ -47,6 +47,34 @@ struct TorrentEngineTests {
         )
         #expect(!response.peers.isEmpty)
     }
+
+    /// Live network: magnet → tracker peers → metadata → file list.
+    /// Requires outbound HTTP/TCP. May take up to ~2 minutes on slow peers.
+    @Test @MainActor
+    func citizenVigilanteMagnetLoadsFileList() async throws {
+        // Exact magnet from issue #4 manual verification (Citizen Vigilante / torrents.ru).
+        let magnet =
+            "magnet:?xt=urn:btih:6950F7068A75E63A8AD6C2B1AA6B63E10B18B51D"
+            + "&tr=http%3A%2F%2Fbt.t-ru.org%2Fann%3Fmagnet"
+            + "&dn=Гражданин-мститель%20%2F%20Citizen%20Vigilante%20(Уве%20Болл%20%2F%20Uwe%20Boll)%20%5B2026%2C%20Хорватия%2C%20Германия%2C%20боевик%2C%20триллер%2C%20WEB-DLRip-AVC%5D%20MVO%20(TVShows)%20%2B%20Sub%20Rus%2C%20Eng%2C%20"
+
+        let engine = TorrentEngine(metadataTimeoutSeconds: 120)
+        await engine.bootstrap()
+        #expect(engine.isOperational)
+
+        try await engine.addMagnet(magnet)
+
+        let torrent = try #require(engine.activeTorrent)
+        #expect(torrent.infoHash == "6950f7068a75e63a8ad6c2b1aa6b63e10b18b51d")
+        #expect(!torrent.files.isEmpty)
+        #expect(torrent.totalSize > 0)
+        #expect(torrent.files.contains { $0.size > 0 })
+        if case let .loaded(loaded) = engine.phase {
+            #expect(loaded.files.count == torrent.files.count)
+        } else {
+            Issue.record("Expected loaded phase, got \(engine.phase)")
+        }
+    }
     #endif
 
     @Test func fileNameUsesLastPathComponent() {

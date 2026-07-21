@@ -91,6 +91,7 @@ final class TorrentEngine {
             let settings = SessionSettings(
                 listenPort: 6881,
                 dhtEnabled: true,
+                dhtPort: 6882, // avoid clashing with listenPort
                 savePath: downloads.path
             )
             let session = Session(settings: settings)
