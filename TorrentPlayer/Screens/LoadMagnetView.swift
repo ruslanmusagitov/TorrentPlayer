@@ -1,0 +1,151 @@
+//
+//  LoadMagnetView.swift
+//  TorrentPlayer
+//
+//  Stub: design/load_magnet/
+//
+
+import SwiftUI
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
+
+struct LoadMagnetView: View {
+    @State private var magnetText = ""
+    var onLoad: (() -> Void)?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: KTSpacing.lg) {
+                VStack(alignment: .leading, spacing: KTSpacing.sm) {
+                    StatusChip(text: "System Ready")
+                    Text("INJECT\nMAGNET")
+                        .font(KTTypography.display())
+                        .foregroundStyle(KTColor.onBackground)
+                        .textCase(.uppercase)
+                        .lineSpacing(-4)
+                    Text("Paste your peer-to-peer magnet link or hash below to initiate the streaming sequence.")
+                        .font(KTTypography.bodyMD())
+                        .foregroundStyle(KTColor.onSurfaceVariant)
+                }
+
+                VStack(alignment: .leading, spacing: KTSpacing.md) {
+                    ZStack(alignment: .topTrailing) {
+                        TextEditor(text: $magnetText)
+                            .font(KTTypography.technicalMD())
+                            .scrollContentBackground(.hidden)
+                            .padding(KTSpacing.md)
+                            .frame(minHeight: 160)
+                            .background(KTColor.surfaceContainerLowest)
+                            .thickBorder()
+                            .hardShadow()
+                            .overlay(alignment: .topLeading) {
+                                if magnetText.isEmpty {
+                                    Text("magnet:?xt=urn:btih:...")
+                                        .font(KTTypography.technicalMD())
+                                        .foregroundStyle(KTColor.onBackground.opacity(0.4))
+                                        .padding(KTSpacing.md)
+                                        .allowsHitTesting(false)
+                                }
+                            }
+
+                        HStack(spacing: KTSpacing.xs) {
+                            miniAction("PASTE") {
+                                #if os(macOS)
+                                if let pasted = NSPasteboard.general.string(forType: .string) {
+                                    magnetText = pasted
+                                }
+                                #else
+                                if let pasted = UIPasteboard.general.string {
+                                    magnetText = pasted
+                                }
+                                #endif
+                            }
+                            miniAction("CLEAR") { magnetText = "" }
+                        }
+                        .padding(KTSpacing.xs)
+                    }
+
+                    BrutalPrimaryButton(
+                        title: "Load Magnet",
+                        systemImage: "bolt.fill",
+                        largeShadow: true
+                    ) {
+                        onLoad?()
+                    }
+                }
+
+                awaitingStreamCard
+
+                HStack(spacing: KTSpacing.md) {
+                    statCard(label: "Network Load", value: "88.2", unit: "MB/S")
+                    statCard(label: "Connected", value: "412", unit: "PEERS", valueColor: KTColor.tertiary)
+                }
+            }
+            .padding(KTSpacing.md)
+            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(KTColor.background)
+    }
+
+    private var awaitingStreamCard: some View {
+        ZStack {
+            KTColor.secondary
+            VStack(spacing: KTSpacing.xs) {
+                Image(systemName: "sensor.tag.radiowaves.forward")
+                    .font(.system(size: 48, weight: .regular))
+                Text("Awaiting Active Stream")
+                    .font(KTTypography.technicalSM())
+                    .textCase(.uppercase)
+                    .tracking(2)
+            }
+            .foregroundStyle(.white)
+            .padding(KTSpacing.lg)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 180)
+        .thickBorder()
+        .hardShadow()
+    }
+
+    private func statCard(label: String, value: String, unit: String, valueColor: Color = KTColor.onBackground) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label.uppercased())
+                .font(KTTypography.labelCaps())
+                .foregroundStyle(KTColor.outline)
+                .tracking(1.1)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(value)
+                    .font(KTTypography.headlineLGMobile())
+                    .foregroundStyle(valueColor)
+                Text(unit)
+                    .font(KTTypography.technicalSM())
+                    .foregroundStyle(valueColor)
+            }
+        }
+        .padding(KTSpacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(KTColor.surface)
+        .thickBorder()
+        .hardShadow()
+    }
+
+    private func miniAction(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(KTTypography.technicalSM())
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(KTColor.surface)
+                .overlay(Rectangle().strokeBorder(KTColor.onBackground, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+#Preview {
+    LoadMagnetView()
+}
