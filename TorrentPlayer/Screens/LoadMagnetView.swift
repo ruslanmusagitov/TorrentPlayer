@@ -13,14 +13,16 @@ import UIKit
 #endif
 
 struct LoadMagnetView: View {
+    @Environment(TorrentEngine.self) private var engine
     @State private var magnetText = ""
+    @State private var isLoading = false
     var onLoad: (() -> Void)?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: KTSpacing.lg) {
                 VStack(alignment: .leading, spacing: KTSpacing.sm) {
-                    StatusChip(text: "System Ready")
+                    StatusChip(text: engine.statusLabel)
                     Text("INJECT\nMAGNET")
                         .font(KTTypography.display())
                         .foregroundStyle(KTColor.onBackground)
@@ -69,12 +71,13 @@ struct LoadMagnetView: View {
                     }
 
                     BrutalPrimaryButton(
-                        title: "Load Magnet",
+                        title: isLoading ? "Loading…" : "Load Magnet",
                         systemImage: "bolt.fill",
                         largeShadow: true
                     ) {
-                        onLoad?()
+                        Task { await loadMagnet() }
                     }
+                    .disabled(isLoading || !engine.isOperational)
                 }
 
                 awaitingStreamCard
@@ -97,10 +100,20 @@ struct LoadMagnetView: View {
             VStack(spacing: KTSpacing.xs) {
                 Image(systemName: "sensor.tag.radiowaves.forward")
                     .font(.system(size: 48, weight: .regular))
-                Text("Awaiting Active Stream")
-                    .font(KTTypography.technicalSM())
-                    .textCase(.uppercase)
-                    .tracking(2)
+                if case let .added(name, hash) = engine.phase {
+                    Text(name.uppercased())
+                        .font(KTTypography.technicalSM())
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                    Text(hash)
+                        .font(KTTypography.technicalSM())
+                        .opacity(0.8)
+                } else {
+                    Text("Awaiting Active Stream")
+                        .font(KTTypography.technicalSM())
+                        .textCase(.uppercase)
+                        .tracking(2)
+                }
             }
             .foregroundStyle(.white)
             .padding(KTSpacing.lg)
@@ -144,8 +157,22 @@ struct LoadMagnetView: View {
         }
         .buttonStyle(.plain)
     }
+
+    private func loadMagnet() async {
+        guard !isLoading else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            try await engine.addMagnet(magnetText)
+            onLoad?()
+        } catch {
+            // Phase already updated on engine; keep user on screen to retry.
+        }
+    }
 }
 
 #Preview {
     LoadMagnetView()
+        .environment(TorrentEngine())
 }
