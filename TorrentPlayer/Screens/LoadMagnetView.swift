@@ -92,8 +92,10 @@ struct LoadMagnetView: View {
             (KTColor.errorContainer, KTColor.error)
         case .unsupportedPlatform:
             (KTColor.secondaryFixed, KTColor.secondary)
-        case .ready, .added:
+        case .ready, .loaded:
             (KTColor.tertiaryContainer, KTColor.onTertiaryContainer)
+        case .fetchingMetadata, .adding:
+            (KTColor.primaryContainer, KTColor.onPrimary)
         default:
             (KTColor.surfaceContainer, KTColor.onSurfaceVariant)
         }
@@ -105,18 +107,27 @@ struct LoadMagnetView: View {
             VStack(spacing: KTSpacing.xs) {
                 Image(systemName: "sensor.tag.radiowaves.forward")
                     .font(.system(size: 48, weight: .regular))
-                if case let .added(name, hash) = engine.phase {
-                    Text(name.uppercased())
+                switch engine.phase {
+                case .fetchingMetadata:
+                    Text("Fetching Metadata…")
+                        .font(KTTypography.technicalSM())
+                        .textCase(.uppercase)
+                        .tracking(2)
+                case let .loaded(torrent):
+                    Text(torrent.displayName.uppercased())
                         .font(KTTypography.technicalSM())
                         .multilineTextAlignment(.center)
                         .lineLimit(3)
                         .minimumScaleFactor(0.75)
-                    Text(hash)
+                    Text("\(torrent.files.count) files • \(torrent.formattedTotalSize.uppercased())")
+                        .font(KTTypography.technicalSM())
+                        .opacity(0.8)
+                    Text(torrent.infoHash)
                         .font(KTTypography.technicalSM())
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .opacity(0.8)
-                } else {
+                default:
                     Text("Awaiting Active Stream")
                         .font(KTTypography.technicalSM())
                         .textCase(.uppercase)

@@ -25,6 +25,55 @@ struct TorrentEngineTests {
     }
     #endif
 
+    @Test func fileNameUsesLastPathComponent() {
+        #expect(TorrentFileFormatting.fileName(from: "Season 1/Episode.mkv") == "Episode.mkv")
+        #expect(TorrentFileFormatting.fileName(from: "single.mkv") == "single.mkv")
+    }
+
+    @Test func makeFileItemBuildsDetailWithSizeAndKind() {
+        let item = TorrentFileFormatting.makeFileItem(
+            index: 0,
+            path: "Interstellar.2014.Main.mkv",
+            length: 46_500_000_000
+        )
+        #expect(item.id == 0)
+        #expect(item.name == "Interstellar.2014.Main.mkv")
+        #expect(item.size == 46_500_000_000)
+        #expect(item.detail.contains("GB"))
+        #expect(item.detail.contains("Video/MKV"))
+        #expect(item.isVideo)
+    }
+
+    @Test func makeFileItemMarksSubtitlesAsNonVideo() {
+        let item = TorrentFileFormatting.makeFileItem(
+            index: 1,
+            path: "subs/English_Subs.srt",
+            length: 156_000
+        )
+        #expect(item.name == "English_Subs.srt")
+        #expect(item.detail.contains("Text/SRT"))
+        #expect(!item.isVideo)
+    }
+
+    @Test func makeActiveTorrentMapsAllEntries() {
+        let torrent = TorrentFileFormatting.makeActiveTorrent(
+            displayName: "Example Release",
+            infoHash: "abc123",
+            totalSize: 1_000_000,
+            fileEntries: [
+                ("video/main.mkv", 900_000),
+                ("readme.txt", 100_000),
+            ]
+        )
+        #expect(torrent.displayName == "Example Release")
+        #expect(torrent.infoHash == "abc123")
+        #expect(torrent.totalSize == 1_000_000)
+        #expect(torrent.files.count == 2)
+        #expect(torrent.files[0].name == "main.mkv")
+        #expect(torrent.files[1].name == "readme.txt")
+        #expect(torrent.formattedTotalSize.contains("MB") || torrent.formattedTotalSize.contains("KB"))
+    }
+
     @Test @MainActor func bootstrapLeavesEngineReadyOnMacOS() async {
         #if os(macOS)
         let engine = TorrentEngine()
@@ -37,20 +86,17 @@ struct TorrentEngineTests {
         #endif
     }
 
-    @Test @MainActor func addMagnetAcceptsValidURIOnMacOS() async throws {
+    @Test @MainActor func addMagnetTimesOutWithoutPeersOnMacOS() async {
         #if os(macOS)
-        let engine = TorrentEngine()
+        let engine = TorrentEngine(metadataTimeoutSeconds: 1)
         await engine.bootstrap()
 
         let magnet = "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12&dn=Example"
-        try await engine.addMagnet(magnet)
-
-        if case let .added(name, hash) = engine.phase {
-            #expect(name == "Example")
-            #expect(hash == "abcdef1234567890abcdef1234567890abcdef12")
-        } else {
-            Issue.record("Expected added phase after valid magnet, got \(engine.phase)")
+        await #expect(throws: TorrentEngineError.metadataTimeout) {
+            try await engine.addMagnet(magnet)
         }
+        #expect(engine.phase == .ready)
+        #expect(engine.activeTorrent == nil)
         #else
         #expect(Bool(true))
         #endif

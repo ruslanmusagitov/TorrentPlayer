@@ -2,54 +2,36 @@
 //  SelectFileView.swift
 //  TorrentPlayer
 //
-//  Stub: design/select_file/
+//  design/select_file/
 //
 
 import SwiftUI
 
-private struct StubTorrentFile: Identifiable, Hashable {
-    let id: String
-    let name: String
-    let detail: String
-    let isVideo: Bool
-}
-
 struct SelectFileView: View {
+    @Environment(TorrentEngine.self) private var engine
     var onStream: (() -> Void)?
 
-    @State private var selectedID = "1"
+    @State private var selectedID: Int?
 
-    private let files: [StubTorrentFile] = [
-        .init(id: "1", name: "Interstellar.2014.Main.mkv", detail: "46.5 GB • Video/MKV", isVideo: true),
-        .init(id: "2", name: "English_Subs.srt", detail: "156 KB • Text/SRT", isVideo: false),
-        .init(id: "3", name: "Torrent_Info.txt", detail: "2 KB • Text/Plain", isVideo: false),
-        .init(id: "4", name: "Interstellar.Behind.The.Scenes.mp4", detail: "1.2 GB • Video/MP4", isVideo: true),
-        .init(id: "5", name: "Poster_HighRes.jpg", detail: "8.4 MB • Image/JPG", isVideo: false),
-    ]
+    private var files: [TorrentFileItem] {
+        engine.activeTorrent?.files ?? []
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: KTSpacing.lg) {
-                    activeTorrentHeader
-
-                    HStack {
-                        Text("File Contents (\(files.count))")
-                            .font(KTTypography.labelCaps())
-                            .textCase(.uppercase)
-                            .tracking(1.1)
-                        Spacer()
-                        HStack(spacing: 4) {
-                            Text("Sort by:")
-                                .font(KTTypography.technicalSM())
-                                .opacity(0.7)
-                            Text("Name")
-                                .font(KTTypography.technicalSM())
-                                .underline()
-                        }
+                    if let torrent = engine.activeTorrent {
+                        activeTorrentHeader(torrent)
                     }
 
-                    fileList
+                    if case .fetchingMetadata = engine.phase {
+                        loadingState
+                    } else if engine.activeTorrent == nil {
+                        emptyState
+                    } else {
+                        fileListSection
+                    }
                 }
                 .padding(KTSpacing.md)
                 .frame(maxWidth: 900, alignment: .leading)
@@ -59,6 +41,7 @@ struct SelectFileView: View {
             BrutalPrimaryButton(title: "Stream Now", systemImage: "play.fill") {
                 onStream?()
             }
+            .disabled(engine.activeTorrent == nil)
             .padding(KTSpacing.sm)
             .background(KTColor.surface)
             .overlay(alignment: .top) {
@@ -68,22 +51,84 @@ struct SelectFileView: View {
             }
         }
         .background(KTColor.background)
+        .onChange(of: engine.activeTorrent?.files.count) { _, _ in
+            selectedID = engine.activeTorrent?.files.first?.id
+        }
+        .onAppear {
+            if selectedID == nil {
+                selectedID = engine.activeTorrent?.files.first?.id
+            }
+        }
     }
 
-    private var activeTorrentHeader: some View {
+    private var fileListSection: some View {
+        Group {
+            HStack {
+                Text("File Contents (\(files.count))")
+                    .font(KTTypography.labelCaps())
+                    .textCase(.uppercase)
+                    .tracking(1.1)
+                Spacer()
+                HStack(spacing: 4) {
+                    Text("Sort by:")
+                        .font(KTTypography.technicalSM())
+                        .opacity(0.7)
+                    Text("Name")
+                        .font(KTTypography.technicalSM())
+                        .underline()
+                }
+            }
+
+            fileList
+        }
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: KTSpacing.sm) {
+            ProgressView()
+                .controlSize(.large)
+            Text("FETCHING METADATA…")
+                .font(KTTypography.labelCaps())
+                .tracking(1.1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(KTSpacing.lg)
+        .background(KTColor.surfaceContainerLowest)
+        .thickBorder()
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: KTSpacing.sm) {
+            Image(systemName: "folder.badge.questionmark")
+                .font(.system(size: 40))
+            Text("LOAD A MAGNET FIRST")
+                .font(KTTypography.labelCaps())
+                .tracking(1.1)
+            Text("Paste a magnet link on the Load screen to see file contents here.")
+                .font(KTTypography.bodyMD())
+                .foregroundStyle(KTColor.onSurfaceVariant)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(KTSpacing.lg)
+        .background(KTColor.surfaceContainerLowest)
+        .thickBorder()
+    }
+
+    private func activeTorrentHeader(_ torrent: ActiveTorrent) -> some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: KTSpacing.xs) {
                 Text("ACTIVE_TORRENT")
                     .font(KTTypography.labelCaps())
                     .foregroundStyle(KTColor.secondaryFixed)
                     .tracking(1.1)
-                Text("Interstellar.2014.2160p.HDR.x265.torrent")
+                Text(torrent.displayName)
                     .font(KTTypography.headlineLGMobile())
                     .foregroundStyle(KTColor.onSecondary)
                     .textCase(.uppercase)
             }
             Spacer(minLength: KTSpacing.sm)
-            Text("SIZE: 48.2 GB")
+            Text("SIZE: \(torrent.formattedTotalSize.uppercased())")
                 .font(KTTypography.technicalMD())
                 .foregroundStyle(KTColor.secondary)
                 .padding(KTSpacing.xs)
@@ -105,7 +150,7 @@ struct SelectFileView: View {
                     selectedID = file.id
                 } label: {
                     HStack(spacing: KTSpacing.md) {
-                        Image(systemName: file.isVideo ? "film" : (file.name.hasSuffix(".srt") ? "captions.bubble" : "doc.text"))
+                        Image(systemName: iconName(for: file))
                             .font(.system(size: 22, weight: .semibold))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(file.name)
@@ -134,8 +179,24 @@ struct SelectFileView: View {
         }
         .thickBorder()
     }
+
+    private func iconName(for file: TorrentFileItem) -> String {
+        if file.isVideo {
+            return "film"
+        }
+        let ext = (file.name as NSString).pathExtension.lowercased()
+        switch ext {
+        case "srt", "vtt", "ass":
+            return "captions.bubble"
+        case "jpg", "jpeg", "png", "gif", "webp":
+            return "photo"
+        default:
+            return "doc.text"
+        }
+    }
 }
 
 #Preview {
     SelectFileView()
+        .environment(TorrentEngine())
 }
