@@ -49,7 +49,7 @@ struct TorrentEngineTests {
     }
 
     /// Live network: magnet → tracker peers → metadata → file list.
-    /// Requires outbound HTTP/TCP. May take up to ~2 minutes on slow peers.
+    /// Requires outbound HTTP/TCP. Times out after 10s if metadata never arrives.
     @Test @MainActor
     func citizenVigilanteMagnetLoadsFileList() async throws {
         // Exact magnet from issue #4 manual verification (Citizen Vigilante / torrents.ru).
@@ -58,7 +58,7 @@ struct TorrentEngineTests {
             + "&tr=http%3A%2F%2Fbt.t-ru.org%2Fann%3Fmagnet"
             + "&dn=Гражданин-мститель%20%2F%20Citizen%20Vigilante%20(Уве%20Болл%20%2F%20Uwe%20Boll)%20%5B2026%2C%20Хорватия%2C%20Германия%2C%20боевик%2C%20триллер%2C%20WEB-DLRip-AVC%5D%20MVO%20(TVShows)%20%2B%20Sub%20Rus%2C%20Eng%2C%20"
 
-        let engine = TorrentEngine(metadataTimeoutSeconds: 120)
+        let engine = TorrentEngine(metadataTimeoutSeconds: 10)
         await engine.bootstrap()
         #expect(engine.isOperational)
 
