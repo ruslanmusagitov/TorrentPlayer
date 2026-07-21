@@ -88,3 +88,4 @@ UI-задачи сверяют визуал и структуру с этими 
 | 4. Список файлов по magnet (macOS) | Metadata → имена/размеры в Select File; патчи tracker/handshake; e2e на реальный magnet | Результат 1 на macOS | принять | Merge PR #16 |
 | 5. Фильтр видео + UI выбора файла | videoFiles фильтр; selectedFile на engine; Select File выбирает одно видео; Stream Now только с видео; ошибка 2-го magnet показывается | Результат 2 | принять | Merge PR #17 |
 | 6. Sequential download выбранного файла | PiecePicker sequential + file piece range; TorrentEngine prioritize после metadata и selectFile; vendor unit-тесты | Движение к результату 3 (порядок кусков) | принять | Merge PR #18 |
+| 7. Мост стриминга в AVPlayer | Local HTTP + StreamingByteGate; AVPlayer для mp4/mov; MKV → VLC; playback до 100% на macOS (файл растёт, открывается частично) | Результат 3 на macOS | принять | Merge PR #19 |
