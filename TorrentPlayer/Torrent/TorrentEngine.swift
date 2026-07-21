@@ -12,6 +12,7 @@
 import Foundation
 import Observation
 #if os(macOS)
+import AppKit
 import SwiftTorrent
 #endif
 
@@ -42,6 +43,12 @@ final class TorrentEngine {
     private(set) var selectedFileID: Int?
     private(set) var playbackPhase: PlaybackPhase = .idle
     private(set) var playbackURL: URL?
+    private(set) var downloadProgress: Double = 0
+    private(set) var downloadRateBytes: Double = 0
+    private(set) var peersConnected: Int = 0
+    private(set) var piecesCompleted: Int = 0
+    private(set) var piecesTotal: Int = 0
+    private(set) var usesExternalPlayer: Bool = false
 
     var selectedFile: TorrentFileItem? {
         guard let selectedFileID, let activeTorrent else { return nil }
@@ -56,6 +63,16 @@ final class TorrentEngine {
             downloadsDirectory: downloads,
             relativePath: selectedFile.path
         )
+    }
+
+    /// AVPlayer only handles a few containers; MKV/AVI/etc. need an external player (e.g. VLC).
+    static func isAVPlayerCompatible(path: String) -> Bool {
+        switch (path as NSString).pathExtension.lowercased() {
+        case "mp4", "m4v", "mov":
+            true
+        default:
+            false
+        }
     }
 
     #if os(macOS)
@@ -285,13 +302,15 @@ final class TorrentEngine {
         playbackPhase = .buffering
         let fileIndex = file.id
         let leadBytes = min(streamingLeadBytes, max(file.size, 1))
+        usesExternalPlayer = !Self.isAVPlayerCompatible(path: file.path)
 
         do {
             await applySequentialPriorityForSelection()
-            try await handle.waitForLeadingBytes(
+            try await waitForLeadingBytesPolling(
+                handle: handle,
                 fileIndex: fileIndex,
                 bytes: leadBytes,
-                timeout: streamingLeadTimeoutSeconds
+                generation: generation
             )
             guard generation == playbackGeneration else { return }
 
@@ -327,6 +346,10 @@ final class TorrentEngine {
             streamServer = server
             playbackURL = url
             playbackPhase = .ready
+
+            if usesExternalPlayer {
+                NSWorkspace.shared.open(url)
+            }
         } catch is TorrentError {
             guard generation == playbackGeneration else { return }
             playbackPhase = .failed(TorrentEngineError.playbackBufferTimeout.localizedDescription)
@@ -352,9 +375,54 @@ final class TorrentEngine {
         #endif
         playbackURL = nil
         playbackPhase = .idle
+        usesExternalPlayer = false
+    }
+
+    func refreshDownloadStatus() async {
+        #if os(macOS)
+        guard let handle = activeHandle else {
+            downloadProgress = 0
+            downloadRateBytes = 0
+            peersConnected = 0
+            piecesCompleted = 0
+            piecesTotal = 0
+            return
+        }
+        let status = await handle.status()
+        downloadProgress = status.progress
+        downloadRateBytes = status.downloadRate
+        peersConnected = status.numPeers
+        piecesCompleted = status.piecesCompleted
+        piecesTotal = status.piecesTotal
+        #endif
     }
 
     #if os(macOS)
+    private func waitForLeadingBytesPolling(
+        handle: TorrentHandle,
+        fileIndex: Int,
+        bytes: Int64,
+        generation: UInt64
+    ) async throws {
+        let deadline = ContinuousClock.now + .seconds(streamingLeadTimeoutSeconds)
+        while ContinuousClock.now < deadline {
+            guard generation == playbackGeneration else { return }
+            await refreshDownloadStatus()
+            do {
+                try await handle.waitForLeadingBytes(
+                    fileIndex: fileIndex,
+                    bytes: bytes,
+                    timeout: 2
+                )
+                await refreshDownloadStatus()
+                return
+            } catch is TorrentError {
+                // keep polling until overall timeout
+            }
+        }
+        throw TorrentError.timeout
+    }
+
     /// Surfaces the failure while keeping a previously loaded torrent (if any)
     /// so Files can still show it; Load UI reads `phase == .error`.
     private func failOrRestore(

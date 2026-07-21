@@ -27,11 +27,17 @@ struct StreamingPlayerView: View {
     }
 
     private var stats: [(label: String, value: String, color: Color)] {
-        [
-            ("DL_SPEED", "—", KTColor.primary),
-            ("PEERS_CONNECTED", "—", KTColor.secondary),
-            ("ETA_REMAINING", "—", KTColor.onBackground),
-            ("PROTOCOL", "LOCAL_HTTP", KTColor.tertiary),
+        let speed = formatRate(engine.downloadRateBytes)
+        let peers = engine.peersConnected > 0 ? "\(engine.peersConnected)" : "—"
+        let pieces = engine.piecesTotal > 0
+            ? "\(engine.piecesCompleted)/\(engine.piecesTotal)"
+            : "—"
+        let protocolLabel = engine.usesExternalPlayer ? "VLC_HTTP" : "LOCAL_HTTP"
+        return [
+            ("DL_SPEED", speed, KTColor.primary),
+            ("PEERS_CONNECTED", peers, KTColor.secondary),
+            ("PIECES", pieces, KTColor.onBackground),
+            ("PROTOCOL", protocolLabel, KTColor.tertiary),
         ]
     }
 
@@ -68,6 +74,13 @@ struct StreamingPlayerView: View {
         .task(id: engine.selectedFileID) {
             await engine.preparePlayback()
         }
+        .task(id: engine.playbackPhase) {
+            while !Task.isCancelled {
+                await engine.refreshDownloadStatus()
+                try? await Task.sleep(for: .seconds(1))
+                if engine.playbackPhase == .idle { break }
+            }
+        }
         .onChange(of: engine.playbackURL) { _, url in
             rebuildPlayer(with: url)
         }
@@ -88,7 +101,7 @@ struct StreamingPlayerView: View {
             )
 
             #if os(macOS)
-            if let player {
+            if let player, !engine.usesExternalPlayer {
                 VideoPlayer(player: player)
             } else {
                 playbackPlaceholder
@@ -185,13 +198,18 @@ struct StreamingPlayerView: View {
     private var placeholderLabel: String {
         switch engine.playbackPhase {
         case let .failed(message):
-            message.uppercased()
+            return message.uppercased()
         case .buffering:
-            "BUFFERING STREAM…"
+            let pct = Int(engine.downloadProgress * 100)
+            return "BUFFERING \(pct)% • \(engine.piecesCompleted) PIECES"
         case .idle:
-            "WAITING FOR STREAM"
+            return "WAITING FOR STREAM"
         case .ready:
-            "STARTING…"
+            if engine.usesExternalPlayer {
+                return "OPENED IN EXTERNAL PLAYER (VLC)"
+            } else {
+                return "STARTING…"
+            }
         }
     }
 
@@ -264,11 +282,21 @@ struct StreamingPlayerView: View {
     private var streamInfoText: String {
         let path = engine.selectedFile?.path ?? "—"
         let url = engine.playbackURL?.absoluteString ?? "—"
+        let player = engine.usesExternalPlayer ? "EXTERNAL_VLC" : "AVPLAYER"
         return """
         FILE: \(path)
         SOURCE: LOCAL_HTTP_LOOPBACK
+        PLAYER: \(player)
         PLAYBACK_URL: \(url)
         """
+    }
+
+    private func formatRate(_ bytesPerSecond: Double) -> String {
+        guard bytesPerSecond > 0 else { return "—" }
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        return formatter.string(fromByteCount: Int64(bytesPerSecond)) + "/s"
     }
 
     private func togglePlayPause() {
@@ -289,7 +317,7 @@ struct StreamingPlayerView: View {
     #if os(macOS)
     private func rebuildPlayer(with url: URL?) {
         player?.pause()
-        guard let url else {
+        guard let url, !engine.usesExternalPlayer else {
             player = nil
             return
         }

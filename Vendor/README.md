@@ -14,3 +14,4 @@ Local copy of [warppipe/swift-torrent](https://github.com/warppipe/swift-torrent
 - Streaming readiness (task #7):
   - `FileStorage.leadingPieceRange` / `pieceRange(fileOffset:length:)` map file byte ranges to piece indices.
   - `TorrentHandle.waitForLeadingBytes` / `waitForFileBytes` poll until contiguous pieces are on disk.
+  - After magnet metadata: disconnect metadata-era peers, re-announce with real `left`, send empty bitfield on connect.

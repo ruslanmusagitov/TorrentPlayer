@@ -74,6 +74,15 @@ public actor TorrentHandle {
             pieceManager: pm, piecePicker: pp, diskIO: dio,
             pieceCount: info.pieceCount
         )
+        await peerManager.setOnPieceCompleted { [weak self] index in
+            Task { await self?.notePieceDownloaded(index: index) }
+        }
+    }
+
+    private func notePieceDownloaded(index: Int) async {
+        guard let pm = pieceManager else { return }
+        totalDownloaded += Int64(await pm.expectedPieceSize(index))
+        lastDownloadRateSample += Int64(await pm.expectedPieceSize(index))
     }
 
     /// Complete initialization for .torrent-file init path (must be called after init).
@@ -108,7 +117,8 @@ public actor TorrentHandle {
 
         // Announce to trackers
         if let trackerMgr = trackerManager {
-            let left = info?.totalSize ?? 0
+            // Magnet announce before metadata: left must be > 0 or trackers treat us as a seeder.
+            let left = info?.totalSize ?? (1 << 30)
             let params = AnnounceParams(
                 infoHash: infoHash, peerID: peerID, port: 6881,
                 left: left - totalDownloaded, event: "started"
@@ -124,11 +134,23 @@ public actor TorrentHandle {
         try? await diskIO?.allocateFiles()
         startDownloadMonitor()
 
-        // Resume all waiting metadata continuations
+        // Metadata-era peers used pieceCount=0/1 and are not useful for piece download.
+        await peerManager.disconnectAll()
+
+        // Resume waiters so the app can prioritizeFile before new peers arrive.
         let conts = metadataContinuations
         metadataContinuations.removeAll()
         for (_, cont) in conts {
             cont.resume(returning: info)
+        }
+
+        // Re-announce with the real size so we get download peers.
+        if let trackerMgr = trackerManager {
+            let params = AnnounceParams(
+                infoHash: infoHash, peerID: peerID, port: 6881,
+                left: info.totalSize, event: "started"
+            )
+            await announceToAllTrackers(trackerMgr: trackerMgr, params: params)
         }
     }
 
@@ -143,8 +165,20 @@ public actor TorrentHandle {
                     break
                 }
                 await self.peerManager.checkTimeouts()
+                // Rough rate from bytes completed in this monitor tick.
+                let sample = await self.lastDownloadRateSample
+                await self.setDownloadRate(Double(sample) / 2.0)
+                await self.resetDownloadRateSample()
             }
         }
+    }
+
+    private func setDownloadRate(_ rate: Double) {
+        downloadRate = rate
+    }
+
+    private func resetDownloadRateSample() {
+        lastDownloadRateSample = 0
     }
 
     private func checkCompletion() async -> Bool {

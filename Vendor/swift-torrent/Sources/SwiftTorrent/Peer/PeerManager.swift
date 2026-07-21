@@ -84,6 +84,21 @@ public actor PeerManager {
         self.onMetadataReceived = handler
     }
 
+    public func setOnPieceCompleted(_ handler: @escaping (Int) -> Void) {
+        self.onPieceCompleted = handler
+    }
+
+    /// Drop all peers (e.g. after magnet metadata when pieceCount becomes known).
+    public func disconnectAll() async {
+        let keys = Array(connections.keys)
+        for key in keys {
+            if let conn = connections[key] {
+                try? await conn.close()
+            }
+            removePeerByKey(key)
+        }
+    }
+
     /// Add a peer and attempt connection.
     public func addPeer(address: String, port: UInt16) async {
         let key = "\(address):\(port)"
@@ -124,6 +139,12 @@ public actor PeerManager {
             await state.setAmInterested(true)
         }
         peerStates[key] = state
+
+        // Send our bitfield once we know the piece count (post-metadata).
+        if pieceCount > 0 {
+            let empty = Bitfield(count: pieceCount)
+            try? await conn.send(.bitfield(empty.toData()))
+        }
 
         // Send interested
         try? await conn.send(.interested)
