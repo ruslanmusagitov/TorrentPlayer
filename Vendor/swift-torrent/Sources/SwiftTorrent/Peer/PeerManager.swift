@@ -36,6 +36,19 @@ public actor PeerManager {
         self.pieceCount = pieceCount
     }
 
+    /// Replace the live piece picker (value type). Callers must preserve
+    /// availability state when only changing strategy/range.
+    public func updatePiecePicker(_ picker: PiecePicker) {
+        self.piecePicker = picker
+    }
+
+    /// Mutate the live piece picker in place.
+    public func modifyPiecePicker(_ body: (inout PiecePicker) -> Void) {
+        guard var picker = piecePicker else { return }
+        body(&picker)
+        piecePicker = picker
+    }
+
     public func configureMagnet(metadataExchange: MetadataExchange) {
         self.metadataExchange = metadataExchange
     }

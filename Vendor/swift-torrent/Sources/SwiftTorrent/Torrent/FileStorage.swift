@@ -67,6 +67,21 @@ public struct FileStorage: Sendable {
         return Int((totalSize + Int64(pieceLength) - 1) / Int64(pieceLength))
     }
 
+    /// Piece index range covering `fileIndex` (half-open). Boundary pieces that
+    /// also touch adjacent files are included — required for correct file I/O.
+    public func pieceRange(forFileIndex fileIndex: Int) -> Range<Int>? {
+        guard fileIndex >= 0, fileIndex < files.count, pieceLength > 0 else { return nil }
+        let file = files[fileIndex]
+        guard file.length > 0 else { return nil }
+
+        let start = Int(file.offset / Int64(pieceLength))
+        let lastByte = file.offset + file.length - 1
+        let endExclusive = Int(lastByte / Int64(pieceLength)) + 1
+        let clampedEnd = min(endExclusive, pieceCount)
+        guard start < clampedEnd else { return nil }
+        return start..<clampedEnd
+    }
+
     /// Size of a specific piece (last piece may be smaller).
     public func pieceSize(_ index: Int) -> Int {
         let start = Int64(index) * Int64(pieceLength)

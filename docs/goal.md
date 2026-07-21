@@ -87,3 +87,4 @@ UI-задачи сверяют визуал и структуру с этими 
 | 3. Torrent-движок и сессия (macOS) | SwiftTorrent SPM + TorrentEngine; magnet принимается без краша; unit-тесты | Основа для результата 1 | принять (после merge MR) | Issue #3 |
 | 4. Список файлов по magnet (macOS) | Metadata → имена/размеры в Select File; патчи tracker/handshake; e2e на реальный magnet | Результат 1 на macOS | принять | Merge PR #16 |
 | 5. Фильтр видео + UI выбора файла | videoFiles фильтр; selectedFile на engine; Select File выбирает одно видео; Stream Now только с видео; ошибка 2-го magnet показывается | Результат 2 | принять | Merge PR #17 |
+| 6. Sequential download выбранного файла | PiecePicker sequential + file piece range; TorrentEngine prioritize после metadata и selectFile; vendor unit-тесты | Движение к результату 3 (порядок кусков) | принять (после merge PR) | Issue #6 |

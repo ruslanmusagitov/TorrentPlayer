@@ -243,6 +243,23 @@ public actor TorrentHandle {
         )
     }
 
+    /// Download only pieces belonging to `fileIndex`, in start→end order when `sequential` is true.
+    /// No-op if metadata is missing or the file index is invalid.
+    public func prioritizeFile(_ fileIndex: Int, sequential: Bool = true) async {
+        guard let info else { return }
+        let storage = FileStorage(info: info)
+        guard let range = storage.pieceRange(forFileIndex: fileIndex) else { return }
+        let mode: PiecePickMode = sequential ? .sequential : .rarestFirst
+
+        await peerManager.modifyPiecePicker { picker in
+            picker.setPriority(range: range, mode: mode)
+        }
+        if var local = piecePicker {
+            local.setPriority(range: range, mode: mode)
+            piecePicker = local
+        }
+    }
+
     /// Returns the file entries for this torrent, or nil if metadata is not yet available.
     public func getFiles() -> [TorrentInfo.FileEntry]? {
         info?.files

@@ -63,4 +63,74 @@ final class PiecePickerTests: XCTestCase {
         let picked = picker.pick(have: have, peerHas: peerBF)
         XCTAssertTrue(picked == 0 || picked == 2)
     }
+
+    func testSequentialPicksLowestIndex() {
+        var picker = PiecePicker(pieceCount: 5)
+        picker.setSequential(range: 0..<5)
+
+        var peerBF = Bitfield(count: 5)
+        peerBF.set(2)
+        peerBF.set(4)
+        peerBF.set(1)
+
+        let have = Bitfield(count: 5)
+        XCTAssertEqual(picker.pick(have: have, peerHas: peerBF), 1)
+
+        var have1 = have
+        have1.set(1)
+        XCTAssertEqual(picker.pick(have: have1, peerHas: peerBF), 2)
+
+        var have2 = have1
+        have2.set(2)
+        XCTAssertEqual(picker.pick(have: have2, peerHas: peerBF), 4)
+    }
+
+    func testSequentialIgnoresOutsideRange() {
+        var picker = PiecePicker(pieceCount: 6)
+        picker.setSequential(range: 2..<4)
+
+        var peerBF = Bitfield(count: 6)
+        for i in 0..<6 { peerBF.set(i) }
+
+        let have = Bitfield(count: 6)
+        XCTAssertEqual(picker.pick(have: have, peerHas: peerBF), 2)
+
+        var have2 = have
+        have2.set(2)
+        XCTAssertEqual(picker.pick(have: have2, peerHas: peerBF), 3)
+
+        var haveDone = have2
+        haveDone.set(3)
+        XCTAssertNil(picker.pick(have: haveDone, peerHas: peerBF))
+    }
+
+    func testSequentialPickMultipleInOrder() {
+        var picker = PiecePicker(pieceCount: 5)
+        picker.setSequential(range: 1..<4)
+
+        var peerBF = Bitfield(count: 5)
+        for i in 0..<5 { peerBF.set(i) }
+
+        let have = Bitfield(count: 5)
+        XCTAssertEqual(picker.pickMultiple(have: have, peerHas: peerBF, count: 3), [1, 2, 3])
+    }
+
+    func testClearPriorityRestoresRarestFirst() {
+        var picker = PiecePicker(pieceCount: 3)
+        picker.setSequential(range: 1..<2)
+        picker.clearPriority()
+        XCTAssertEqual(picker.pickMode, .rarestFirst)
+        XCTAssertNil(picker.interestedPieceRange)
+
+        var bf = Bitfield(count: 3)
+        bf.set(0); bf.set(1); bf.set(2)
+        picker.addPeerBitfield(bf)
+        picker.addHave(1) // piece 1 more available
+
+        var peerBF = Bitfield(count: 3)
+        peerBF.set(0); peerBF.set(1); peerBF.set(2)
+        let have = Bitfield(count: 3)
+        let picked = picker.pick(have: have, peerHas: peerBF)
+        XCTAssertTrue(picked == 0 || picked == 2)
+    }
 }
