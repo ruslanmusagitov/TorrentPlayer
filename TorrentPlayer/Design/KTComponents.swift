@@ -12,7 +12,18 @@ struct HardShadow: ViewModifier {
     var color: Color = KTColor.onBackground
 
     func body(content: Content) -> some View {
-        content.shadow(color: color, radius: 0, x: offset, y: offset)
+        if offset == 0 {
+            content
+        } else {
+            content
+                .background(alignment: .topLeading) {
+                    Rectangle()
+                        .fill(color)
+                        .offset(x: offset, y: offset)
+                }
+                .padding(.trailing, offset)
+                .padding(.bottom, offset)
+        }
     }
 }
 
@@ -108,12 +119,93 @@ struct StatusChip: View {
         Text(text.uppercased())
             .font(KTTypography.technicalSM())
             .foregroundStyle(foreground)
+            .lineLimit(2)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(background)
             .overlay(Rectangle().strokeBorder(KTColor.onBackground, lineWidth: 1))
     }
 }
+
+#if os(iOS)
+import UIKit
+
+struct MagnetURIEditor: UIViewRepresentable {
+    @Binding var text: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.delegate = context.coordinator
+        textView.font = UIFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+        textView.backgroundColor = .clear
+        textView.textColor = UIColor(KTColor.onBackground)
+        textView.tintColor = UIColor(KTColor.onBackground)
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.isScrollEnabled = true
+        textView.dataDetectorTypes = []
+        textView.linkTextAttributes = [:]
+        textView.autocorrectionType = .no
+        textView.autocapitalizationType = .none
+        textView.smartDashesType = .no
+        textView.smartQuotesType = .no
+        textView.smartInsertDeleteType = .no
+        textView.textContainerInset = UIEdgeInsets(top: 36, left: 16, bottom: 16, right: 16)
+        textView.textContainer.lineFragmentPadding = 0
+        textView.textContainer.widthTracksTextView = true
+        textView.layoutManager.allowsNonContiguousLayout = false
+        textView.text = text
+        return textView
+    }
+
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        if uiView.text != text {
+            uiView.text = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        @Binding var text: String
+
+        init(text: Binding<String>) {
+            _text = text
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            text = textView.text
+        }
+    }
+}
+#else
+struct MagnetURIEditor: View {
+    @Binding var text: String
+
+    private static let placeholder = "magnet:?xt=urn:btih:..."
+
+    var body: some View {
+        TextField(
+            "",
+            text: $text,
+            prompt: Text(Self.placeholder)
+                .font(KTTypography.technicalMD())
+                .foregroundStyle(KTColor.onBackground.opacity(0.4)),
+            axis: .vertical
+        )
+        .font(KTTypography.technicalMD())
+        .autocorrectionDisabled()
+        .lineLimit(4...)
+        .padding(.top, 36)
+        .padding(.horizontal, KTSpacing.md)
+        .padding(.bottom, KTSpacing.md)
+    }
+}
+#endif
 
 struct AppHeaderBar: View {
     var body: some View {

@@ -22,7 +22,11 @@ struct LoadMagnetView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: KTSpacing.lg) {
                 VStack(alignment: .leading, spacing: KTSpacing.sm) {
-                    StatusChip(text: engine.statusLabel)
+                    StatusChip(
+                        text: engine.statusLabel,
+                        background: statusChipColors.background,
+                        foreground: statusChipColors.foreground
+                    )
                     Text("INJECT\nMAGNET")
                         .font(KTTypography.display())
                         .foregroundStyle(KTColor.onBackground)
@@ -35,23 +39,11 @@ struct LoadMagnetView: View {
 
                 VStack(alignment: .leading, spacing: KTSpacing.md) {
                     ZStack(alignment: .topTrailing) {
-                        TextEditor(text: $magnetText)
-                            .font(KTTypography.technicalMD())
-                            .scrollContentBackground(.hidden)
-                            .padding(KTSpacing.md)
+                        MagnetURIEditor(text: $magnetText)
                             .frame(minHeight: 160)
                             .background(KTColor.surfaceContainerLowest)
                             .thickBorder()
                             .hardShadow()
-                            .overlay(alignment: .topLeading) {
-                                if magnetText.isEmpty {
-                                    Text("magnet:?xt=urn:btih:...")
-                                        .font(KTTypography.technicalMD())
-                                        .foregroundStyle(KTColor.onBackground.opacity(0.4))
-                                        .padding(KTSpacing.md)
-                                        .allowsHitTesting(false)
-                                }
-                            }
 
                         HStack(spacing: KTSpacing.xs) {
                             miniAction("PASTE") {
@@ -94,6 +86,19 @@ struct LoadMagnetView: View {
         .background(KTColor.background)
     }
 
+    private var statusChipColors: (background: Color, foreground: Color) {
+        switch engine.phase {
+        case .error:
+            (KTColor.errorContainer, KTColor.error)
+        case .unsupportedPlatform:
+            (KTColor.secondaryFixed, KTColor.secondary)
+        case .ready, .added:
+            (KTColor.tertiaryContainer, KTColor.onTertiaryContainer)
+        default:
+            (KTColor.surfaceContainer, KTColor.onSurfaceVariant)
+        }
+    }
+
     private var awaitingStreamCard: some View {
         ZStack {
             KTColor.secondary
@@ -104,9 +109,12 @@ struct LoadMagnetView: View {
                     Text(name.uppercased())
                         .font(KTTypography.technicalSM())
                         .multilineTextAlignment(.center)
-                        .lineLimit(2)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.75)
                     Text(hash)
                         .font(KTTypography.technicalSM())
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                         .opacity(0.8)
                 } else {
                     Text("Awaiting Active Stream")
