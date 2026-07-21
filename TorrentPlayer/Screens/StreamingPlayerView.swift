@@ -2,19 +2,25 @@
 //  StreamingPlayerView.swift
 //  TorrentPlayer
 //
-//  design/streaming_player/ — Task #7: AVPlayer over local HTTP stream.
+//  design/streaming_player/ — Task #7 stream bridge; Task #8 play/pause + dual progress.
 //
 
 import SwiftUI
 #if os(macOS)
+import AVFoundation
 import AVKit
 #endif
 
 struct StreamingPlayerView: View {
     @Environment(TorrentEngine.self) private var engine
-    @State private var isPlaying = true
+    @State private var isPlaying = false
+    @State private var currentTime: TimeInterval = 0
+    @State private var duration: TimeInterval = 0
+    @State private var bufferedFraction: Double = 0
     #if os(macOS)
     @State private var player: AVPlayer?
+    @State private var timeObserver: Any?
+    @State private var endObserver: NSObjectProtocol?
     #endif
     @Environment(\.horizontalSizeClass) private var sizeClass
 
@@ -26,17 +32,30 @@ struct StreamingPlayerView: View {
         #endif
     }
 
+    private var downloadBarFraction: Double {
+        max(
+            PlaybackFormatting.downloadFraction(engine.downloadProgress),
+            PlaybackFormatting.downloadFraction(bufferedFraction)
+        )
+    }
+
+    private var playbackBarFraction: Double {
+        PlaybackFormatting.fraction(current: currentTime, duration: duration)
+    }
+
     private var stats: [(label: String, value: String, color: Color)] {
         let speed = formatRate(engine.downloadRateBytes)
         let peers = engine.peersConnected > 0 ? "\(engine.peersConnected)" : "—"
-        let pieces = engine.piecesTotal > 0
-            ? "\(engine.piecesCompleted)/\(engine.piecesTotal)"
-            : "—"
+        let eta = PlaybackFormatting.etaClock(
+            progress: engine.downloadProgress,
+            rateBytesPerSecond: engine.downloadRateBytes,
+            totalBytes: engine.selectedFile?.size ?? 0
+        )
         let protocolLabel = engine.usesExternalPlayer ? "VLC_HTTP" : "LOCAL_HTTP"
         return [
             ("DL_SPEED", speed, KTColor.primary),
             ("PEERS_CONNECTED", peers, KTColor.secondary),
-            ("PIECES", pieces, KTColor.onBackground),
+            ("ETA_REMAINING", eta, KTColor.onBackground),
             ("PROTOCOL", protocolLabel, KTColor.tertiary),
         ]
     }
@@ -85,8 +104,7 @@ struct StreamingPlayerView: View {
             rebuildPlayer(with: url)
         }
         .onDisappear {
-            player?.pause()
-            player = nil
+            tearDownPlayer()
             engine.stopPlayback()
         }
         #endif
@@ -102,7 +120,7 @@ struct StreamingPlayerView: View {
 
             #if os(macOS)
             if let player, !engine.usesExternalPlayer {
-                VideoPlayer(player: player)
+                BareVideoView(player: player)
             } else {
                 playbackPlaceholder
             }
@@ -121,7 +139,23 @@ struct StreamingPlayerView: View {
                     Spacer()
                 }
                 .padding(KTSpacing.sm)
+
                 Spacer()
+
+                if showsCenterPlayOverlay {
+                    Button(action: togglePlayPause) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 48, weight: .bold))
+                            .foregroundStyle(KTColor.onPrimary)
+                            .frame(width: 96, height: 96)
+                            .background(KTColor.primary)
+                            .thickBorder()
+                            .hardShadow()
+                    }
+                    .buttonStyle(.plain)
+                    Spacer()
+                }
+
                 HStack(spacing: KTSpacing.sm) {
                     controlButton(
                         systemImage: isPlaying ? "pause.fill" : "play.fill",
@@ -130,8 +164,12 @@ struct StreamingPlayerView: View {
                     ) {
                         togglePlayPause()
                     }
-                    controlButton(systemImage: "backward.fill", fill: .white, tint: KTColor.onBackground) {}
-                    controlButton(systemImage: "forward.fill", fill: .white, tint: KTColor.onBackground) {}
+                    controlButton(systemImage: "backward.fill", fill: .white, tint: KTColor.onBackground) {
+                        skip(by: -10)
+                    }
+                    controlButton(systemImage: "forward.fill", fill: .white, tint: KTColor.onBackground) {
+                        skip(by: 10)
+                    }
                     Spacer()
                     HStack(spacing: KTSpacing.xs) {
                         Text("VOL")
@@ -157,6 +195,14 @@ struct StreamingPlayerView: View {
         .thickBorder()
     }
 
+    private var showsCenterPlayOverlay: Bool {
+        #if os(macOS)
+        player != nil && !engine.usesExternalPlayer && !isPlaying && engine.playbackPhase == .ready
+        #else
+        false
+        #endif
+    }
+
     private var playbackPlaceholder: some View {
         VStack(spacing: KTSpacing.sm) {
             Image(systemName: placeholderIcon)
@@ -174,7 +220,7 @@ struct StreamingPlayerView: View {
     private var liveBadgeText: String {
         switch engine.playbackPhase {
         case .ready:
-            "● LIVE"
+            isPlaying ? "● LIVE" : "● PAUSED"
         case .buffering:
             "● BUFFERING"
         case .failed:
@@ -216,28 +262,44 @@ struct StreamingPlayerView: View {
     private var progressSection: some View {
         VStack(alignment: .leading, spacing: KTSpacing.xs) {
             HStack {
-                Text("00:00:00")
+                Text(PlaybackFormatting.clock(seconds: duration > 0 ? currentTime : nil))
                 Spacer()
-                Text("--:--:--")
+                Text(PlaybackFormatting.clock(seconds: duration > 0 ? duration : nil))
             }
             .font(KTTypography.technicalMD().weight(.bold))
             .textCase(.uppercase)
 
             GeometryReader { geo in
+                let downloadWidth = geo.size.width * downloadBarFraction
+                let playbackWidth = geo.size.width * playbackBarFraction
                 ZStack(alignment: .leading) {
+                    KTColor.surfaceContainer
                     HazardStripes()
-                        .frame(width: geo.size.width * 0.75)
+                        .frame(width: max(0, downloadWidth))
+                        .clipped()
                     KTColor.tertiaryContainer
-                        .frame(width: geo.size.width * 0.05)
-                    Rectangle()
-                        .fill(KTColor.primary)
-                        .frame(width: 6, height: 40)
-                        .offset(x: geo.size.width * 0.05 - 3, y: -4)
-                        .overlay(Rectangle().strokeBorder(KTColor.onBackground, lineWidth: 2))
+                        .frame(width: max(0, playbackWidth))
+                        .overlay(alignment: .trailing) {
+                            if playbackBarFraction > 0 {
+                                Rectangle()
+                                    .fill(KTColor.primary)
+                                    .frame(width: 6, height: 40)
+                                    .overlay(Rectangle().strokeBorder(KTColor.onBackground, lineWidth: 2))
+                                    .offset(x: 3, y: -4)
+                            }
+                        }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .background(KTColor.surfaceContainer)
                 .thickBorder()
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onEnded { value in
+                            guard duration > 0, geo.size.width > 0 else { return }
+                            let fraction = min(1, max(0, value.location.x / geo.size.width))
+                            seek(to: duration * Double(fraction))
+                        }
+                )
             }
             .frame(height: 32)
         }
@@ -282,11 +344,13 @@ struct StreamingPlayerView: View {
     private var streamInfoText: String {
         let path = engine.selectedFile?.path ?? "—"
         let url = engine.playbackURL?.absoluteString ?? "—"
-        let player = engine.usesExternalPlayer ? "EXTERNAL_VLC" : "AVPLAYER"
+        let playerKind = engine.usesExternalPlayer ? "EXTERNAL_VLC" : "AVPLAYER"
+        let dl = Int(PlaybackFormatting.downloadFraction(engine.downloadProgress) * 100)
         return """
         FILE: \(path)
         SOURCE: LOCAL_HTTP_LOOPBACK
-        PLAYER: \(player)
+        PLAYER: \(playerKind)
+        DOWNLOAD: \(dl)%
         PLAYBACK_URL: \(url)
         """
     }
@@ -305,26 +369,98 @@ struct StreamingPlayerView: View {
             isPlaying.toggle()
             return
         }
-        if isPlaying {
+        if player.timeControlStatus == .playing {
             player.pause()
+            isPlaying = false
         } else {
             player.play()
+            isPlaying = true
         }
-        #endif
+        #else
         isPlaying.toggle()
+        #endif
+    }
+
+    private func skip(by delta: TimeInterval) {
+        guard duration > 0 else { return }
+        seek(to: currentTime + delta)
+    }
+
+    private func seek(to seconds: TimeInterval) {
+        #if os(macOS)
+        guard let player, duration > 0 else { return }
+        let target = min(duration, max(0, seconds))
+        let time = CMTime(seconds: target, preferredTimescale: 600)
+        player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
+        currentTime = target
+        #endif
     }
 
     #if os(macOS)
     private func rebuildPlayer(with url: URL?) {
-        player?.pause()
-        guard let url, !engine.usesExternalPlayer else {
-            player = nil
-            return
-        }
+        tearDownPlayer()
+        guard let url, !engine.usesExternalPlayer else { return }
         let next = AVPlayer(url: url)
         player = next
+        attachObservers(to: next)
         next.play()
         isPlaying = true
+    }
+
+    private func attachObservers(to player: AVPlayer) {
+        let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
+        timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak player] time in
+            guard let player else { return }
+            let seconds = time.seconds
+            if seconds.isFinite {
+                currentTime = max(0, seconds)
+            }
+            if let item = player.currentItem {
+                let itemDuration = item.duration.seconds
+                let resolvedDuration: TimeInterval
+                if itemDuration.isFinite, itemDuration > 0 {
+                    duration = itemDuration
+                    resolvedDuration = itemDuration
+                } else {
+                    resolvedDuration = duration
+                }
+                bufferedFraction = Self.loadedFraction(for: item, duration: resolvedDuration)
+            }
+            isPlaying = player.timeControlStatus == .playing
+        }
+
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: player.currentItem,
+            queue: .main
+        ) { _ in
+            isPlaying = false
+        }
+    }
+
+    private func tearDownPlayer() {
+        if let timeObserver, let player {
+            player.removeTimeObserver(timeObserver)
+        }
+        timeObserver = nil
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+        }
+        endObserver = nil
+        player?.pause()
+        player = nil
+        currentTime = 0
+        duration = 0
+        bufferedFraction = 0
+        isPlaying = false
+    }
+
+    private static func loadedFraction(for item: AVPlayerItem, duration: TimeInterval) -> Double {
+        guard duration > 0 else { return 0 }
+        guard let range = item.loadedTimeRanges.first?.timeRangeValue else { return 0 }
+        let end = range.start.seconds + range.duration.seconds
+        guard end.isFinite else { return 0 }
+        return PlaybackFormatting.fraction(current: end, duration: duration)
     }
     #endif
 
@@ -366,6 +502,27 @@ struct StreamingPlayerView: View {
         .buttonStyle(.plain)
     }
 }
+
+#if os(macOS)
+/// AVPlayer surface without system chrome so Kinetic controls stay visible.
+private struct BareVideoView: NSViewRepresentable {
+    let player: AVPlayer
+
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.controlsStyle = .none
+        view.videoGravity = .resizeAspect
+        view.player = player
+        return view
+    }
+
+    func updateNSView(_ nsView: AVPlayerView, context: Context) {
+        if nsView.player !== player {
+            nsView.player = player
+        }
+    }
+}
+#endif
 
 #Preview {
     StreamingPlayerView()
