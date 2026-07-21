@@ -23,6 +23,13 @@ struct TorrentEngineTests {
             _ = try AddTorrentParams.fromMagnet("not-a-magnet", savePath: "/tmp")
         }
     }
+
+    @Test func realWorldMagnetParses() throws {
+        let magnet = "magnet:?xt=urn:btih:6950F7068A75E63A8AD6C2B1AA6B63E10B18B51D&tr=http%3A%2F%2Fbt.t-ru.org%2Fann%3Fmagnet&dn=Citizen"
+        let params = try AddTorrentParams.fromMagnet(magnet, savePath: "/tmp")
+        #expect(params.infoHash != nil)
+        #expect(params.magnetLink?.trackers.isEmpty == false)
+    }
     #endif
 
     @Test func fileNameUsesLastPathComponent() {
@@ -95,7 +102,11 @@ struct TorrentEngineTests {
         await #expect(throws: TorrentEngineError.metadataTimeout) {
             try await engine.addMagnet(magnet)
         }
-        #expect(engine.phase == .ready)
+        if case .error = engine.phase {
+            #expect(engine.isOperational)
+        } else {
+            Issue.record("Expected error phase after metadata timeout, got \(engine.phase)")
+        }
         #expect(engine.activeTorrent == nil)
         #else
         #expect(Bool(true))
@@ -110,7 +121,11 @@ struct TorrentEngineTests {
         await #expect(throws: AddTorrentError.self) {
             try await engine.addMagnet("not-a-magnet")
         }
-        #expect(engine.phase == .ready)
+        if case .error = engine.phase {
+            #expect(engine.isOperational)
+        } else {
+            Issue.record("Expected error phase after invalid magnet, got \(engine.phase)")
+        }
         #else
         #expect(Bool(true))
         #endif

@@ -53,7 +53,7 @@ final class TorrentEngine {
 
     var isOperational: Bool {
         switch phase {
-        case .ready, .loaded:
+        case .ready, .loaded, .error:
             true
         default:
             false
@@ -112,11 +112,13 @@ final class TorrentEngine {
     func addMagnet(_ uri: String) async throws {
         let trimmed = uri.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
+            phase = .error(TorrentEngineError.emptyMagnet.localizedDescription)
             throw TorrentEngineError.emptyMagnet
         }
 
         #if os(macOS)
         guard let session else {
+            phase = .error(TorrentEngineError.sessionNotReady.localizedDescription)
             throw TorrentEngineError.sessionNotReady
         }
 
@@ -146,7 +148,10 @@ final class TorrentEngine {
                 pendingInfoHash = nil
                 activeHandle = nil
                 activeInfoHash = previousInfoHash
-                restorePhase(previousTorrent: previousTorrent)
+                failOrRestore(
+                    previousTorrent: previousTorrent,
+                    message: TorrentEngineError.metadataTimeout.localizedDescription
+                )
                 throw TorrentEngineError.metadataTimeout
             }
 
@@ -161,26 +166,39 @@ final class TorrentEngine {
             lastMagnetURI = trimmed
             pendingInfoHash = nil
             phase = .loaded(torrent)
+        } catch let error as TorrentEngineError {
+            if case .metadataTimeout = error {
+                throw error
+            }
+            if let pendingInfoHash {
+                await session.removeTorrent(pendingInfoHash)
+            }
+            activeHandle = nil
+            activeInfoHash = previousInfoHash
+            failOrRestore(previousTorrent: previousTorrent, message: error.localizedDescription)
+            throw error
         } catch {
             if let pendingInfoHash {
                 await session.removeTorrent(pendingInfoHash)
             }
             activeHandle = nil
             activeInfoHash = previousInfoHash
-            restorePhase(previousTorrent: previousTorrent)
+            failOrRestore(previousTorrent: previousTorrent, message: error.localizedDescription)
             throw error
         }
         #else
+        phase = .error(TorrentEngineError.unsupportedPlatform.localizedDescription)
         throw TorrentEngineError.unsupportedPlatform
         #endif
     }
 
     #if os(macOS)
-    private func restorePhase(previousTorrent: ActiveTorrent?) {
+    private func failOrRestore(previousTorrent: ActiveTorrent?, message: String) {
         if let previousTorrent {
+            activeTorrent = previousTorrent
             phase = .loaded(previousTorrent)
         } else {
-            phase = .ready
+            phase = .error(message)
         }
     }
     #endif
