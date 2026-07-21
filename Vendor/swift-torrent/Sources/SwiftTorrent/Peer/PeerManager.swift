@@ -82,6 +82,10 @@ public actor PeerManager {
         self.metadataExchange = metadataExchange
     }
 
+    public func clearMetadataExchange() {
+        self.metadataExchange = nil
+    }
+
     public func setOnMetadataReceived(_ handler: @escaping (TorrentInfo) -> Void) {
         self.onMetadataReceived = handler
     }

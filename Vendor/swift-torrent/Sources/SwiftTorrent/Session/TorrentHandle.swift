@@ -142,7 +142,7 @@ public actor TorrentHandle {
         state = .downloading
         // Stop magnet metadata exchange — further extended messages are noise.
         metadataExchange = nil
-        await peerManager.configureMagnet(metadataExchange: nil)
+        await peerManager.clearMetadataExchange()
         try? await diskIO?.allocateFiles()
         startDownloadMonitor()
 
