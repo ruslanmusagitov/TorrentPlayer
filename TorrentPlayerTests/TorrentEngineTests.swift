@@ -93,6 +93,7 @@ struct TorrentEngineTests {
             length: 46_500_000_000
         )
         #expect(item.id == 0)
+        #expect(item.path == "Interstellar.2014.Main.mkv")
         #expect(item.name == "Interstellar.2014.Main.mkv")
         #expect(item.size == 46_500_000_000)
         #expect(item.detail.contains("GB"))
@@ -106,6 +107,7 @@ struct TorrentEngineTests {
             path: "subs/English_Subs.srt",
             length: 156_000
         )
+        #expect(item.path == "subs/English_Subs.srt")
         #expect(item.name == "English_Subs.srt")
         #expect(item.detail.contains("Text/SRT"))
         #expect(!item.isVideo)
@@ -125,9 +127,74 @@ struct TorrentEngineTests {
         #expect(torrent.infoHash == "abc123")
         #expect(torrent.totalSize == 1_000_000)
         #expect(torrent.files.count == 2)
+        #expect(torrent.files[0].path == "video/main.mkv")
         #expect(torrent.files[0].name == "main.mkv")
         #expect(torrent.files[1].name == "readme.txt")
         #expect(torrent.formattedTotalSize.contains("MB") || torrent.formattedTotalSize.contains("KB"))
+    }
+
+    @Test func diskURLJoinsRelativePathComponents() {
+        let base = URL(fileURLWithPath: "/tmp/downloads", isDirectory: true)
+        let url = LocalHTTPStreamServer.diskURL(
+            downloadsDirectory: base,
+            relativePath: "Season 1/Episode.mkv"
+        )
+        #expect(url.path == "/tmp/downloads/Season 1/Episode.mkv")
+    }
+
+    @Test func parseRangeSupportsSuffixAndOpenEnded() {
+        #expect(LocalHTTPStreamServer.parseRange("Range: bytes=0-99", fileSize: 1000) == 0...99)
+        #expect(LocalHTTPStreamServer.parseRange("Range: bytes=100-", fileSize: 1000) == 100...999)
+        #expect(LocalHTTPStreamServer.parseRange("Range: bytes=-50", fileSize: 1000) == 950...999)
+    }
+
+    @Test func localHTTPStreamServerServesFullAndPartialContent() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TorrentPlayerHTTP-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let fileURL = dir.appendingPathComponent("clip.bin")
+        let payload = Data((0..<256).map { UInt8($0) })
+        try payload.write(to: fileURL)
+
+        let server = LocalHTTPStreamServer(
+            fileURL: fileURL,
+            fileSize: Int64(payload.count),
+            contentType: "application/octet-stream"
+        )
+        try await server.start()
+        defer { server.stop() }
+        let streamURL = try #require(server.streamURL)
+
+        let full = try await URLSession.shared.data(from: streamURL)
+        #expect(full.0 == payload)
+        #expect((full.1 as? HTTPURLResponse)?.statusCode == 200)
+
+        var rangeRequest = URLRequest(url: streamURL)
+        rangeRequest.setValue("bytes=10-19", forHTTPHeaderField: "Range")
+        let partial = try await URLSession.shared.data(for: rangeRequest)
+        #expect(partial.0 == Data(payload[10...19]))
+        #expect((partial.1 as? HTTPURLResponse)?.statusCode == 206)
+    }
+
+    @Test @MainActor func preparePlaybackFailsWithoutActiveHandle() async {
+        let engine = TorrentEngine(streamingLeadTimeoutSeconds: 1)
+        let torrent = TorrentFileFormatting.makeActiveTorrent(
+            displayName: "Clip",
+            infoHash: "hash",
+            totalSize: 1_000,
+            fileEntries: [("clip.mp4", 1_000)]
+        )
+        engine.applyLoadedTorrentForTesting(torrent)
+        #expect(engine.selectedFileURL?.lastPathComponent == "clip.mp4")
+
+        await engine.preparePlayback()
+        if case .failed = engine.playbackPhase {
+            #expect(engine.playbackURL == nil)
+        } else {
+            Issue.record("Expected failed playback without torrent handle, got \(engine.playbackPhase)")
+        }
     }
 
     @Test func videoFilesFiltersNonVideoEntries() {

@@ -6,6 +6,7 @@
 //  Task #4: metadata fetch and file list.
 //  Task #5: video file selection.
 //  Task #6: sequential download of selected file.
+//  Task #7: local HTTP stream bridge → AVPlayer.
 //
 
 import Foundation
@@ -28,26 +29,54 @@ final class TorrentEngine {
         case error(String)
     }
 
+    enum PlaybackPhase: Equatable {
+        case idle
+        case buffering
+        case ready
+        case failed(String)
+    }
+
     private(set) var phase: Phase = .idle
     private(set) var lastMagnetURI: String?
     private(set) var activeTorrent: ActiveTorrent?
     private(set) var selectedFileID: Int?
+    private(set) var playbackPhase: PlaybackPhase = .idle
+    private(set) var playbackURL: URL?
 
     var selectedFile: TorrentFileItem? {
         guard let selectedFileID, let activeTorrent else { return nil }
         return activeTorrent.files.first { $0.id == selectedFileID && $0.isVideo }
     }
 
+    /// On-disk URL for the selected video under Application Support downloads.
+    var selectedFileURL: URL? {
+        guard let selectedFile else { return nil }
+        guard let downloads = try? Self.downloadsDirectory() else { return nil }
+        return LocalHTTPStreamServer.diskURL(
+            downloadsDirectory: downloads,
+            relativePath: selectedFile.path
+        )
+    }
+
     #if os(macOS)
     private var session: Session?
     private var activeHandle: TorrentHandle?
     private var activeInfoHash: InfoHash?
+    private var streamServer: LocalHTTPStreamServer?
     #endif
 
     private let metadataTimeoutSeconds: Int
+    private let streamingLeadBytes: Int64
+    private let streamingLeadTimeoutSeconds: Int
 
-    init(metadataTimeoutSeconds: Int = 10) {
+    init(
+        metadataTimeoutSeconds: Int = 10,
+        streamingLeadBytes: Int64 = 2 * 1024 * 1024,
+        streamingLeadTimeoutSeconds: Int = 120
+    ) {
         self.metadataTimeoutSeconds = metadataTimeoutSeconds
+        self.streamingLeadBytes = streamingLeadBytes
+        self.streamingLeadTimeoutSeconds = streamingLeadTimeoutSeconds
     }
 
     var isLoadingTorrent: Bool {
@@ -93,6 +122,9 @@ final class TorrentEngine {
         guard let activeTorrent,
               activeTorrent.videoFiles.contains(where: { $0.id == id })
         else { return }
+        if selectedFileID != id {
+            stopPlayback()
+        }
         selectedFileID = id
         #if os(macOS)
         Task { await applySequentialPriorityForSelection() }
@@ -147,6 +179,8 @@ final class TorrentEngine {
             phase = .error(TorrentEngineError.sessionNotReady.localizedDescription)
             throw TorrentEngineError.sessionNotReady
         }
+
+        stopPlayback()
 
         let previousTorrent = activeTorrent
         let previousInfoHash = activeInfoHash
@@ -230,6 +264,83 @@ final class TorrentEngine {
         phase = .error(TorrentEngineError.unsupportedPlatform.localizedDescription)
         throw TorrentEngineError.unsupportedPlatform
         #endif
+    }
+
+    /// Waits for leading sequential bytes, then starts a loopback HTTP server for AVPlayer.
+    func preparePlayback() async {
+        #if os(macOS)
+        stopPlayback()
+
+        guard let file = selectedFile, let handle = activeHandle else {
+            playbackPhase = .failed(TorrentEngineError.noSelectedFile.localizedDescription)
+            return
+        }
+        guard let diskURL = selectedFileURL else {
+            playbackPhase = .failed(TorrentEngineError.noSelectedFile.localizedDescription)
+            return
+        }
+
+        playbackPhase = .buffering
+        let fileIndex = file.id
+        let leadBytes = min(streamingLeadBytes, max(file.size, 1))
+
+        do {
+            await applySequentialPriorityForSelection()
+            try await handle.waitForLeadingBytes(
+                fileIndex: fileIndex,
+                bytes: leadBytes,
+                timeout: streamingLeadTimeoutSeconds
+            )
+
+            let waiter: LocalHTTPStreamServer.ByteWaiter = { offset, length in
+                do {
+                    try await handle.waitForFileBytes(
+                        fileIndex: fileIndex,
+                        fileOffset: offset,
+                        length: length,
+                        timeout: 1
+                    )
+                    return true
+                } catch {
+                    return false
+                }
+            }
+
+            let server = LocalHTTPStreamServer(
+                fileURL: diskURL,
+                fileSize: file.size,
+                contentType: LocalHTTPStreamServer.contentType(forPath: file.path),
+                waitForBytes: waiter
+            )
+            try await server.start()
+            guard let url = server.streamURL else {
+                server.stop()
+                throw TorrentEngineError.playbackServerFailed("No port bound")
+            }
+            streamServer = server
+            playbackURL = url
+            playbackPhase = .ready
+        } catch is TorrentError {
+            playbackPhase = .failed(TorrentEngineError.playbackBufferTimeout.localizedDescription)
+        } catch let error as TorrentEngineError {
+            playbackPhase = .failed(error.localizedDescription)
+        } catch {
+            playbackPhase = .failed(
+                TorrentEngineError.playbackServerFailed(error.localizedDescription).localizedDescription
+            )
+        }
+        #else
+        playbackPhase = .failed(TorrentEngineError.unsupportedPlatform.localizedDescription)
+        #endif
+    }
+
+    func stopPlayback() {
+        #if os(macOS)
+        streamServer?.stop()
+        streamServer = nil
+        #endif
+        playbackURL = nil
+        playbackPhase = .idle
     }
 
     #if os(macOS)

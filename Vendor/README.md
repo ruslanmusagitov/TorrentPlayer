@@ -11,3 +11,6 @@ Local copy of [warppipe/swift-torrent](https://github.com/warppipe/swift-torrent
   - `PiecePicker` supports `sequential` mode restricted to an interested range (lowest missing index first); `clearPriority()` restores rarest-first over all pieces.
   - After metadata, picker starts with an empty interested range (no piece requests) until `TorrentHandle.prioritizeFile` sets the selected file.
   - `prioritizeFile` updates the live picker in `PeerManager`, cancels in-flight block requests, and refills peer pipelines.
+- Streaming readiness (task #7):
+  - `FileStorage.leadingPieceRange` / `pieceRange(fileOffset:length:)` map file byte ranges to piece indices.
+  - `TorrentHandle.waitForLeadingBytes` / `waitForFileBytes` poll until contiguous pieces are on disk.

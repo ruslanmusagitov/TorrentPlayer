@@ -94,6 +94,24 @@ final class SessionIntegrationTests: XCTestCase {
         XCTAssertEqual(storage.pieceRange(forFileIndex: 1), 2..<4)
     }
 
+    func testFileStorageLeadingPieceRange() {
+        // pieceLength 100: file0 [0,250) → need 150 bytes → pieces 0..<2
+        let files = [
+            TorrentInfo.FileEntry(path: "a.bin", length: 250, offset: 0),
+            TorrentInfo.FileEntry(path: "b.bin", length: 100, offset: 250),
+        ]
+        let storage = FileStorage(files: files, pieceLength: 100, totalSize: 350)
+
+        XCTAssertEqual(storage.leadingPieceRange(forFileIndex: 0, bytes: 1), 0..<1)
+        XCTAssertEqual(storage.leadingPieceRange(forFileIndex: 0, bytes: 100), 0..<1)
+        XCTAssertEqual(storage.leadingPieceRange(forFileIndex: 0, bytes: 101), 0..<2)
+        XCTAssertEqual(storage.leadingPieceRange(forFileIndex: 0, bytes: 10_000), 0..<3)
+        // file1 starts mid-piece at offset 250 → piece 2
+        XCTAssertEqual(storage.leadingPieceRange(forFileIndex: 1, bytes: 50), 2..<3)
+        XCTAssertNil(storage.leadingPieceRange(forFileIndex: 0, bytes: 0))
+        XCTAssertNil(storage.leadingPieceRange(forFileIndex: 99, bytes: 10))
+    }
+
     func testDHTMessageRoundTrip() throws {
         let txID = Data([0x01, 0x02])
         let msg = DHTMessage.query(

@@ -87,4 +87,30 @@ public struct FileStorage: Sendable {
         let start = Int64(index) * Int64(pieceLength)
         return Int(min(Int64(pieceLength), totalSize - start))
     }
+
+    /// Piece indices that must be complete to cover `[fileOffset, fileOffset + length)` within the file.
+    public func pieceRange(
+        forFileIndex fileIndex: Int,
+        fileOffset: Int64,
+        length: Int64
+    ) -> Range<Int>? {
+        guard fileIndex >= 0, fileIndex < files.count, pieceLength > 0 else { return nil }
+        let file = files[fileIndex]
+        guard file.length > 0, length > 0, fileOffset >= 0, fileOffset < file.length else { return nil }
+
+        let need = min(length, file.length - fileOffset)
+        let startByte = file.offset + fileOffset
+        let lastByte = startByte + need - 1
+        let start = Int(startByte / Int64(pieceLength))
+        let endExclusive = Int(lastByte / Int64(pieceLength)) + 1
+        let clampedEnd = min(endExclusive, pieceCount)
+        guard start < clampedEnd else { return nil }
+        return start..<clampedEnd
+    }
+
+    /// Piece indices that must be complete to cover the first `bytes` of `fileIndex`.
+    /// Caps at the file length; returns nil for invalid index or empty file.
+    public func leadingPieceRange(forFileIndex fileIndex: Int, bytes: Int64) -> Range<Int>? {
+        pieceRange(forFileIndex: fileIndex, fileOffset: 0, length: bytes)
+    }
 }

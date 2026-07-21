@@ -265,6 +265,59 @@ public actor TorrentHandle {
         info?.files
     }
 
+    /// Returns a single file entry, or nil if metadata is missing / index is out of range.
+    public func fileEntry(at index: Int) -> TorrentInfo.FileEntry? {
+        guard let files = info?.files, index >= 0, index < files.count else { return nil }
+        return files[index]
+    }
+
+    /// Absolute on-disk path for `fileIndex` under this handle's save path.
+    public func filePath(forFileIndex index: Int) -> String? {
+        guard let entry = fileEntry(at: index) else { return nil }
+        return (savePath as NSString).appendingPathComponent(entry.path)
+    }
+
+    /// Whether every piece in `range` is complete.
+    public func hasContiguousPieces(_ range: Range<Int>) async -> Bool {
+        guard let pm = pieceManager else { return false }
+        for index in range {
+            if !(await pm.hasPiece(index)) { return false }
+        }
+        return true
+    }
+
+    /// Waits until the leading `bytes` of `fileIndex` are on disk (contiguous pieces), or throws `TorrentError.timeout`.
+    public func waitForLeadingBytes(fileIndex: Int, bytes: Int64, timeout seconds: Int) async throws {
+        try await waitForFileBytes(fileIndex: fileIndex, fileOffset: 0, length: bytes, timeout: seconds)
+    }
+
+    /// Waits until `[fileOffset, fileOffset + length)` within `fileIndex` is on disk, or throws `TorrentError.timeout`.
+    public func waitForFileBytes(
+        fileIndex: Int,
+        fileOffset: Int64,
+        length: Int64,
+        timeout seconds: Int
+    ) async throws {
+        guard let info else { throw TorrentError.timeout }
+        let storage = FileStorage(info: info)
+        guard let range = storage.pieceRange(
+            forFileIndex: fileIndex,
+            fileOffset: fileOffset,
+            length: length
+        ) else {
+            throw TorrentError.timeout
+        }
+
+        if await hasContiguousPieces(range) { return }
+
+        let deadline = ContinuousClock.now + .seconds(seconds)
+        while ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(200))
+            if await hasContiguousPieces(range) { return }
+        }
+        throw TorrentError.timeout
+    }
+
     /// Generate resume data for saving state.
     public func generateResumeData() async -> ResumeData? {
         guard let completed = await pieceManager?.getCompleted() else { return nil }
