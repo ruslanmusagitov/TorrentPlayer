@@ -228,6 +228,8 @@ final class TorrentEngine {
     }
 
     #if os(macOS)
+    /// Surfaces the failure while keeping a previously loaded torrent (if any)
+    /// so Files can still show it; Load UI reads `phase == .error`.
     private func failOrRestore(
         previousTorrent: ActiveTorrent?,
         previousSelectedFileID: Int?,
@@ -236,12 +238,11 @@ final class TorrentEngine {
         if let previousTorrent {
             activeTorrent = previousTorrent
             selectedFileID = previousSelectedFileID
-            phase = .loaded(previousTorrent)
         } else {
             activeTorrent = nil
             selectedFileID = nil
-            phase = .error(message)
         }
+        phase = .error(message)
     }
     #endif
 

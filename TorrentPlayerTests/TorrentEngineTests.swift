@@ -222,6 +222,36 @@ struct TorrentEngineTests {
         #endif
     }
 
+    @Test @MainActor func addMagnetTimeoutSurfacesErrorWhileKeepingPreviousTorrent() async {
+        #if os(macOS)
+        let engine = TorrentEngine(metadataTimeoutSeconds: 1)
+        await engine.bootstrap()
+
+        let previous = TorrentFileFormatting.makeActiveTorrent(
+            displayName: "Previous",
+            infoHash: "prevhash",
+            totalSize: 1_000,
+            fileEntries: [("main.mkv", 1_000)]
+        )
+        engine.applyLoadedTorrentForTesting(previous)
+
+        let magnet = "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12&dn=Example"
+        await #expect(throws: TorrentEngineError.metadataTimeout) {
+            try await engine.addMagnet(magnet)
+        }
+
+        if case let .error(message) = engine.phase {
+            #expect(message == TorrentEngineError.metadataTimeout.localizedDescription)
+        } else {
+            Issue.record("Expected error phase after second magnet timeout, got \(engine.phase)")
+        }
+        #expect(engine.activeTorrent == previous)
+        #expect(engine.selectedFileID == previous.defaultSelectedFileID)
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+
     @Test @MainActor func addMagnetRejectsInvalidURIOnMacOS() async {
         #if os(macOS)
         let engine = TorrentEngine()
