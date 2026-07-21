@@ -202,7 +202,7 @@
 			mainGroup = 3B59C207300F33FA00231BBF;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				3B59C240300F33FC00231BBF /* XCLocalSwiftPackageReference "swift-torrent" */,
+				3B59C240300F33FC00231BBF /* XCLocalSwiftPackageReference "Vendor/swift-torrent" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3B59C211300F33FA00231BBF /* Products */;
@@ -630,16 +630,16 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		3B59C240300F33FC00231BBF /* XCLocalSwiftPackageReference "swift-torrent" */ = {
+		3B59C240300F33FC00231BBF /* XCLocalSwiftPackageReference "Vendor/swift-torrent" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = Vendor/swift-torrent;
+			relativePath = "Vendor/swift-torrent";
 		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		3B59C241300F33FC00231BBF /* SwiftTorrent */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 3B59C240300F33FC00231BBF /* XCLocalSwiftPackageReference "swift-torrent" */;
+			package = 3B59C240300F33FC00231BBF /* XCLocalSwiftPackageReference "Vendor/swift-torrent" */;
 			productName = SwiftTorrent;
 		};
 /* End XCSwiftPackageProductDependency section */

@@ -178,6 +178,64 @@ struct TorrentEngineTests {
         #expect((partial.1 as? HTTPURLResponse)?.statusCode == 206)
     }
 
+    @Test func streamingByteGateTracksContiguousPrefix() {
+        let gate = StreamingByteGate()
+        #expect(!gate.isReady(offset: 0, length: 1))
+        gate.markReady(through: 100)
+        #expect(gate.isReady(offset: 0, length: 100))
+        #expect(!gate.isReady(offset: 0, length: 101))
+        #expect(gate.isReady(offset: 50, length: 50))
+        gate.markReady(through: 50) // non-monotonic lower mark ignored
+        #expect(gate.readyThroughOffset == 100)
+    }
+
+    @Test func localHTTPStreamServerStreamsBeforeFullFileReady() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TorrentPlayerHTTPGrow-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let fileURL = dir.appendingPathComponent("grow.bin")
+        let totalSize = 1024
+        let readyBytes = 300
+        // Sparse/growing file: only the leading bytes exist as real data.
+        var payload = Data(count: totalSize)
+        for i in 0..<readyBytes { payload[i] = UInt8(i % 251) }
+        try payload.write(to: fileURL)
+
+        let lock = NSLock()
+        var available = readyBytes
+        let server = LocalHTTPStreamServer(
+            fileURL: fileURL,
+            fileSize: Int64(totalSize),
+            contentType: "application/octet-stream",
+            rangeWaitSeconds: 5,
+            chunkSize: 128,
+            waitForBytes: { offset, length in
+                lock.lock()
+                let ready = offset + length <= Int64(available)
+                lock.unlock()
+                return ready
+            }
+        )
+        try await server.start()
+        defer { server.stop() }
+        let streamURL = try #require(server.streamURL)
+
+        // Unlock the rest of the file shortly after the client connects.
+        Task {
+            try? await Task.sleep(for: .milliseconds(100))
+            lock.lock()
+            available = totalSize
+            lock.unlock()
+        }
+
+        let (data, response) = try await URLSession.shared.data(from: streamURL)
+        #expect((response as? HTTPURLResponse)?.statusCode == 200)
+        #expect(data.count == totalSize)
+        #expect(data.prefix(readyBytes) == payload.prefix(readyBytes))
+    }
+
     @Test @MainActor func preparePlaybackFailsWithoutActiveHandle() async {
         let engine = TorrentEngine(streamingLeadTimeoutSeconds: 1)
         let torrent = TorrentFileFormatting.makeActiveTorrent(

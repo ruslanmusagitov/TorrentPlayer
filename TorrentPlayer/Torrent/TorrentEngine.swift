@@ -81,6 +81,7 @@ final class TorrentEngine {
     private var activeInfoHash: InfoHash?
     private var streamServer: LocalHTTPStreamServer?
     private var playbackGeneration: UInt64 = 0
+    private var byteGateAdvanceTask: Task<Void, Never>?
     #endif
 
     private let metadataTimeoutSeconds: Int
@@ -326,18 +327,13 @@ final class TorrentEngine {
                 return
             }
 
+            // HTTP handlers must not await TorrentHandle — under peer load that stalls
+            // every VLC/browser request. Lead bytes are already on disk; a background
+            // task advances the gate as more contiguous bytes arrive.
+            let gate = StreamingByteGate()
+            gate.markReady(through: leadBytes)
             let waiter: LocalHTTPStreamServer.ByteWaiter = { offset, length in
-                do {
-                    try await handle.waitForFileBytes(
-                        fileIndex: fileIndex,
-                        fileOffset: offset,
-                        length: length,
-                        timeout: 2
-                    )
-                    return true
-                } catch {
-                    return false
-                }
+                gate.isReady(offset: offset, length: length)
             }
 
             let server = LocalHTTPStreamServer(
@@ -359,11 +355,18 @@ final class TorrentEngine {
             streamServer = server
             playbackURL = url
             playbackPhase = .ready
-            TPLog.playback("stream ready url=\(url.absoluteString)")
+            startByteGateAdvance(
+                gate: gate,
+                handle: handle,
+                fileIndex: fileIndex,
+                fileSize: file.size,
+                from: leadBytes,
+                generation: generation
+            )
+            TPLog.playback("stream ready url=\(url.absoluteString) lead=\(leadBytes)")
 
             if usesExternalPlayer {
-                TPLog.playback("opening external player for MKV/unsupported container")
-                NSWorkspace.shared.open(url)
+                openInExternalPlayer(url)
             }
         } catch is TorrentError {
             guard generation == playbackGeneration else { return }
@@ -388,6 +391,8 @@ final class TorrentEngine {
     func stopPlayback() {
         #if os(macOS)
         playbackGeneration += 1
+        byteGateAdvanceTask?.cancel()
+        byteGateAdvanceTask = nil
         streamServer?.stop()
         streamServer = nil
         #endif
@@ -466,6 +471,72 @@ final class TorrentEngine {
     private func applySequentialPriorityForSelection() async {
         guard let handle = activeHandle, let selectedFileID else { return }
         await handle.prioritizeFile(selectedFileID, sequential: true)
+    }
+
+    /// Extends `gate` as sequential torrent bytes become available (off the HTTP path).
+    private func startByteGateAdvance(
+        gate: StreamingByteGate,
+        handle: TorrentHandle,
+        fileIndex: Int,
+        fileSize: Int64,
+        from startOffset: Int64,
+        generation: UInt64
+    ) {
+        byteGateAdvanceTask?.cancel()
+        byteGateAdvanceTask = Task.detached { [weak self] in
+            let step: Int64 = 256 * 1024
+            var cursor = startOffset
+            while !Task.isCancelled, cursor < fileSize {
+                guard let self, await self.isPlaybackGeneration(generation) else { return }
+                let length = min(step, fileSize - cursor)
+                do {
+                    try await handle.waitForFileBytes(
+                        fileIndex: fileIndex,
+                        fileOffset: cursor,
+                        length: length,
+                        timeout: 2
+                    )
+                    cursor += length
+                    gate.markReady(through: cursor)
+                } catch {
+                    try? await Task.sleep(for: .milliseconds(200))
+                }
+            }
+            TPLog.playback("byte gate reached end offset=\(cursor)")
+        }
+    }
+
+    private func isPlaybackGeneration(_ generation: UInt64) -> Bool {
+        generation == playbackGeneration
+    }
+
+    /// MKV/AVI are opened in VLC. `NSWorkspace.shared.open(url)` uses the default
+    /// http(s) handler (Safari/Chrome) and will not play Matroska.
+    private func openInExternalPlayer(_ url: URL) {
+        let candidates = [
+            URL(fileURLWithPath: "/Applications/VLC.app"),
+            URL(fileURLWithPath: NSHomeDirectory() + "/Applications/VLC.app"),
+        ]
+        guard let vlc = candidates.first(where: {
+            FileManager.default.fileExists(atPath: $0.path)
+        }) else {
+            TPLog.error("VLC.app not found — install VLC or open \(url.absoluteString) manually")
+            playbackPhase = .failed(
+                "VLC not found. Install VLC from videolan.org, then try Stream Now again."
+            )
+            return
+        }
+        TPLog.playback("opening VLC at \(vlc.path) url=\(url.absoluteString)")
+        let configuration = NSWorkspace.OpenConfiguration()
+        NSWorkspace.shared.open(
+            [url],
+            withApplicationAt: vlc,
+            configuration: configuration
+        ) { _, error in
+            if let error {
+                TPLog.error("VLC open failed: \(error.localizedDescription)")
+            }
+        }
     }
     #endif
 
