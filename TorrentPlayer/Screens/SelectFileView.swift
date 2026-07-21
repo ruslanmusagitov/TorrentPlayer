@@ -129,7 +129,7 @@ struct SelectFileView: View {
 
                 Rectangle()
                     .fill(KTColor.onBackground)
-                    .frame(height: selected || file.id == "1" || file.id == "4" ? KTSpacing.borderThick : KTSpacing.borderThin)
+                    .frame(height: (selected || file.isVideo) ? KTSpacing.borderThick : KTSpacing.borderThin)
             }
         }
         .thickBorder()

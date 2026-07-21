@@ -26,13 +26,28 @@ extension View {
     }
 }
 
+struct BrutalPressStyle: ButtonStyle {
+    var largeShadow: Bool = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .hardShadow(
+                configuration.isPressed
+                    ? 0
+                    : (largeShadow ? KTSpacing.shadowOffsetLarge : KTSpacing.shadowOffset)
+            )
+            .offset(
+                x: configuration.isPressed ? KTSpacing.shadowOffset : 0,
+                y: configuration.isPressed ? KTSpacing.shadowOffset : 0
+            )
+    }
+}
+
 struct BrutalPrimaryButton: View {
     let title: String
     var systemImage: String? = nil
     var largeShadow: Bool = false
     let action: () -> Void
-
-    @State private var pressed = false
 
     var body: some View {
         Button(action: action) {
@@ -51,14 +66,7 @@ struct BrutalPrimaryButton: View {
             .background(KTColor.primaryContainer)
             .thickBorder()
         }
-        .buttonStyle(.plain)
-        .hardShadow(pressed ? 0 : (largeShadow ? KTSpacing.shadowOffsetLarge : KTSpacing.shadowOffset))
-        .offset(x: pressed ? KTSpacing.shadowOffset : 0, y: pressed ? KTSpacing.shadowOffset : 0)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in pressed = true }
-                .onEnded { _ in pressed = false }
-        )
+        .buttonStyle(BrutalPressStyle(largeShadow: largeShadow))
     }
 }
 
@@ -68,8 +76,6 @@ struct BrutalSecondaryButton: View {
     var foreground: Color = KTColor.onBackground
     var background: Color = .white
     let action: () -> Void
-
-    @State private var pressed = false
 
     var body: some View {
         Button(action: action) {
@@ -89,14 +95,7 @@ struct BrutalSecondaryButton: View {
             .background(background)
             .thickBorder()
         }
-        .buttonStyle(.plain)
-        .hardShadow(pressed ? 0 : KTSpacing.shadowOffset)
-        .offset(x: pressed ? KTSpacing.shadowOffset : 0, y: pressed ? KTSpacing.shadowOffset : 0)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in pressed = true }
-                .onEnded { _ in pressed = false }
-        )
+        .buttonStyle(BrutalPressStyle())
     }
 }
 
@@ -276,7 +275,9 @@ struct BottomNavBar: View {
             }
         }
         .frame(height: KTSpacing.bottomNavHeight)
-        .background(KTColor.background)
+        .background {
+            KTColor.background.ignoresSafeArea(edges: .bottom)
+        }
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(KTColor.onBackground)

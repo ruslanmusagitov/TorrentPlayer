@@ -9,6 +9,24 @@ import SwiftUI
 
 struct StreamingPlayerView: View {
     @State private var isPlaying = true
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    private var statsColumnCount: Int {
+        #if os(macOS)
+        4
+        #else
+        sizeClass == .compact ? 1 : 4
+        #endif
+    }
+
+    private var stats: [(label: String, value: String, color: Color)] {
+        [
+            ("DL_SPEED", "12.4 MB/s", KTColor.primary),
+            ("PEERS_CONNECTED", "156 SEED / 42 LEECH", KTColor.secondary),
+            ("ETA_REMAINING", "00:04:22", KTColor.onBackground),
+            ("PROTOCOL", "UTP_V2_ENCRYPTED", KTColor.tertiary),
+        ]
+    }
 
     var body: some View {
         ScrollView {
@@ -133,14 +151,15 @@ struct StreamingPlayerView: View {
     }
 
     private var statsGrid: some View {
-        Grid(horizontalSpacing: 0, verticalSpacing: 0) {
-            GridRow {
-                statCell(label: "DL_SPEED", value: "12.4 MB/s", valueColor: KTColor.primary)
-                statCell(label: "PEERS_CONNECTED", value: "156 SEED / 42 LEECH", valueColor: KTColor.secondary)
-            }
-            GridRow {
-                statCell(label: "ETA_REMAINING", value: "00:04:22", valueColor: KTColor.onBackground)
-                statCell(label: "PROTOCOL", value: "UTP_V2_ENCRYPTED", valueColor: KTColor.tertiary)
+        LazyVGrid(
+            columns: Array(
+                repeating: GridItem(.flexible(), spacing: 0),
+                count: statsColumnCount
+            ),
+            spacing: 0
+        ) {
+            ForEach(Array(stats.enumerated()), id: \.offset) { _, stat in
+                statCell(label: stat.label, value: stat.value, valueColor: stat.color)
             }
         }
         .thickBorder()

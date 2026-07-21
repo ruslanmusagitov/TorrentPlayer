@@ -35,7 +35,7 @@ struct ContentView: View {
                 BottomNavBar(selection: $selection)
             }
         }
-        .background(KTColor.background)
+        .background(KTColor.background.ignoresSafeArea())
         #if os(macOS)
         .frame(minWidth: 900, minHeight: 640)
         #endif
