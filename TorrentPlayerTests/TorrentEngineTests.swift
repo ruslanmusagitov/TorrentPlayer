@@ -69,6 +69,10 @@ struct TorrentEngineTests {
         #expect(!torrent.files.isEmpty)
         #expect(torrent.totalSize > 0)
         #expect(torrent.files.contains { $0.size > 0 })
+        #expect(engine.selectedFileID == torrent.defaultSelectedFileID)
+        if !torrent.videoFiles.isEmpty {
+            #expect(engine.selectedFile != nil)
+        }
         if case let .loaded(loaded) = engine.phase {
             #expect(loaded.files.count == torrent.files.count)
         } else {
@@ -124,6 +128,66 @@ struct TorrentEngineTests {
         #expect(torrent.files[0].name == "main.mkv")
         #expect(torrent.files[1].name == "readme.txt")
         #expect(torrent.formattedTotalSize.contains("MB") || torrent.formattedTotalSize.contains("KB"))
+    }
+
+    @Test func videoFilesFiltersNonVideoEntries() {
+        let torrent = TorrentFileFormatting.makeActiveTorrent(
+            displayName: "Mixed",
+            infoHash: "hash",
+            totalSize: 2_000_000,
+            fileEntries: [
+                ("readme.txt", 100),
+                ("main.mkv", 1_000_000),
+                ("subs.srt", 200),
+                ("trailer.mp4", 500_000),
+                ("poster.jpg", 50_000),
+            ]
+        )
+        #expect(torrent.files.count == 5)
+        #expect(torrent.videoFiles.map(\.name) == ["main.mkv", "trailer.mp4"])
+        #expect(torrent.defaultSelectedFileID == 1)
+    }
+
+    @Test func defaultSelectedFileIDIsNilWithoutVideos() {
+        let torrent = TorrentFileFormatting.makeActiveTorrent(
+            displayName: "Docs Only",
+            infoHash: "hash",
+            totalSize: 300,
+            fileEntries: [
+                ("readme.txt", 100),
+                ("info.nfo", 200),
+            ]
+        )
+        #expect(torrent.videoFiles.isEmpty)
+        #expect(torrent.defaultSelectedFileID == nil)
+    }
+
+    @Test @MainActor func selectFileAcceptsOnlyVideoIDs() {
+        let engine = TorrentEngine()
+        let torrent = TorrentFileFormatting.makeActiveTorrent(
+            displayName: "Mixed",
+            infoHash: "hash",
+            totalSize: 1_500_000,
+            fileEntries: [
+                ("main.mkv", 1_000_000),
+                ("subs.srt", 200),
+                ("extra.mp4", 500_000),
+            ]
+        )
+        engine.applyLoadedTorrentForTesting(torrent)
+
+        #expect(engine.selectedFileID == 0)
+        #expect(engine.selectedFile?.name == "main.mkv")
+
+        engine.selectFile(id: 1)
+        #expect(engine.selectedFileID == 0)
+
+        engine.selectFile(id: 2)
+        #expect(engine.selectedFileID == 2)
+        #expect(engine.selectedFile?.name == "extra.mp4")
+
+        engine.selectFile(id: 99)
+        #expect(engine.selectedFileID == 2)
     }
 
     @Test @MainActor func bootstrapLeavesEngineReadyOnMacOS() async {

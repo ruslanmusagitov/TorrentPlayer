@@ -11,10 +11,12 @@ struct SelectFileView: View {
     @Environment(TorrentEngine.self) private var engine
     var onStream: (() -> Void)?
 
-    @State private var selectedID: Int?
-
     private var files: [TorrentFileItem] {
         engine.activeTorrent?.files ?? []
+    }
+
+    private var hasVideoSelection: Bool {
+        engine.selectedFile != nil
     }
 
     var body: some View {
@@ -29,6 +31,10 @@ struct SelectFileView: View {
                         loadingState
                     } else if engine.activeTorrent == nil {
                         emptyState
+                    } else if files.isEmpty {
+                        emptyState
+                    } else if engine.activeTorrent?.videoFiles.isEmpty == true {
+                        noVideoState
                     } else {
                         fileListSection
                     }
@@ -41,7 +47,7 @@ struct SelectFileView: View {
             BrutalPrimaryButton(title: "Stream Now", systemImage: "play.fill") {
                 onStream?()
             }
-            .disabled(engine.activeTorrent == nil)
+            .disabled(!hasVideoSelection)
             .padding(KTSpacing.sm)
             .background(KTColor.surface)
             .overlay(alignment: .top) {
@@ -51,14 +57,6 @@ struct SelectFileView: View {
             }
         }
         .background(KTColor.background)
-        .onChange(of: engine.activeTorrent?.files.count) { _, _ in
-            selectedID = engine.activeTorrent?.files.first?.id
-        }
-        .onAppear {
-            if selectedID == nil {
-                selectedID = engine.activeTorrent?.files.first?.id
-            }
-        }
     }
 
     private var fileListSection: some View {
@@ -115,6 +113,24 @@ struct SelectFileView: View {
         .thickBorder()
     }
 
+    private var noVideoState: some View {
+        VStack(spacing: KTSpacing.sm) {
+            Image(systemName: "film.stack")
+                .font(.system(size: 40))
+            Text("NO VIDEO FILES")
+                .font(KTTypography.labelCaps())
+                .tracking(1.1)
+            Text("This torrent has no playable video files (mkv, mp4, avi, mov, and similar).")
+                .font(KTTypography.bodyMD())
+                .foregroundStyle(KTColor.onSurfaceVariant)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(KTSpacing.lg)
+        .background(KTColor.surfaceContainerLowest)
+        .thickBorder()
+    }
+
     private func activeTorrentHeader(_ torrent: ActiveTorrent) -> some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: KTSpacing.xs) {
@@ -145,9 +161,10 @@ struct SelectFileView: View {
     private var fileList: some View {
         VStack(spacing: 0) {
             ForEach(files) { file in
-                let selected = selectedID == file.id
+                let selected = engine.selectedFileID == file.id
                 Button {
-                    selectedID = file.id
+                    guard file.isVideo else { return }
+                    engine.selectFile(id: file.id)
                 } label: {
                     HStack(spacing: KTSpacing.md) {
                         Image(systemName: iconName(for: file))

@@ -86,3 +86,4 @@ UI-задачи сверяют визуал и структуру с этими 
 | 2. Каркас UI по макетам | Токены Kinetic Torrent + 4 экрана-заглушки + навигация (sidebar/bottom); сборка macOS и iOS | Каркас для результатов 1, 2, 5 | принять | Merge PR #14 |
 | 3. Torrent-движок и сессия (macOS) | SwiftTorrent SPM + TorrentEngine; magnet принимается без краша; unit-тесты | Основа для результата 1 | принять (после merge MR) | Issue #3 |
 | 4. Список файлов по magnet (macOS) | Metadata → имена/размеры в Select File; патчи tracker/handshake; e2e на реальный magnet | Результат 1 на macOS | принять | Merge PR #16 |
+| 5. Фильтр видео + UI выбора файла | videoFiles фильтр; selectedFile на engine; Select File выбирает одно видео; Stream Now только с видео | Результат 2 | принять | PR feat/5 |
