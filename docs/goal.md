@@ -85,3 +85,4 @@ UI-задачи сверяют визуал и структуру с этими 
 | 1b. Уточнение плана: дизайн | В `docs/goal.md` добавлены секция Дизайн и привязки к `design/` у задач 2, 4, 5, 8, 10 | UI-задачи имеют единый источник макетов | принять | Локальный экспорт Stitch в `design/` |
 | 2. Каркас UI по макетам | Токены Kinetic Torrent + 4 экрана-заглушки + навигация (sidebar/bottom); сборка macOS и iOS | Каркас для результатов 1, 2, 5 | принять | Merge PR #14 |
 | 3. Torrent-движок и сессия (macOS) | SwiftTorrent SPM + TorrentEngine; magnet принимается без краша; unit-тесты | Основа для результата 1 | принять (после merge MR) | Issue #3 |
+| 4. Список файлов по magnet (macOS) | Metadata → имена/размеры в Select File; патчи tracker/handshake; e2e на реальный magnet | Результат 1 на macOS | принять | Merge PR #16 |
