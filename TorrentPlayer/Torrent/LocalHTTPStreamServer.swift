@@ -76,9 +76,13 @@ final class LocalHTTPStreamServer: @unchecked Sendable {
         }
         self.listener = listener
         self.port = port
+        TPLog.http("listening on 127.0.0.1:\(port.rawValue) file=\(fileURL.lastPathComponent) size=\(fileSize)")
     }
 
     func stop() {
+        if let port {
+            TPLog.http("stop port=\(port.rawValue)")
+        }
         listener?.cancel()
         listener = nil
         port = nil
@@ -159,6 +163,7 @@ final class LocalHTTPStreamServer: @unchecked Sendable {
 
         let ready = await waitWithTimeout(offset: start, length: length)
         guard ready else {
+            TPLog.http("503 bytes not ready offset=\(start) length=\(length)")
             return Self.simpleResponse(status: 503, body: "Bytes Not Ready")
         }
 
@@ -167,6 +172,9 @@ final class LocalHTTPStreamServer: @unchecked Sendable {
             defer { try? handle.close() }
             try handle.seek(toOffset: UInt64(start))
             let body = try handle.read(upToCount: Int(length)) ?? Data()
+            TPLog.http(
+                "\(byteRange == nil ? 200 : 206) offset=\(start) length=\(body.count)/\(length) range=\(rangeHeader ?? "-")"
+            )
 
             var header = "HTTP/1.1 \(byteRange == nil ? 200 : 206) \(byteRange == nil ? "OK" : "Partial Content")\r\n"
             header += "Content-Type: \(contentType)\r\n"

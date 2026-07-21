@@ -129,12 +129,16 @@ public actor TorrentHandle {
     }
 
     private func onMetadataReceived(info: TorrentInfo) async {
+        TorrentLog.session(
+            "onMetadataReceived name=\(info.name) pieces=\(info.pieceCount) pieceLength=\(info.pieceLength) size=\(info.totalSize)"
+        )
         await setupDownloadComponents(info: info)
         state = .downloading
         try? await diskIO?.allocateFiles()
         startDownloadMonitor()
 
         // Metadata-era peers used pieceCount=0/1 and are not useful for piece download.
+        TorrentLog.session("disconnecting metadata-era peers")
         await peerManager.disconnectAll()
 
         // Resume waiters so the app can prioritizeFile before new peers arrive.
@@ -150,6 +154,7 @@ public actor TorrentHandle {
                 infoHash: infoHash, peerID: peerID, port: 6881,
                 left: info.totalSize, event: "started"
             )
+            TorrentLog.session("re-announce after metadata left=\(info.totalSize)")
             await announceToAllTrackers(trackerMgr: trackerMgr, params: params)
         }
     }
@@ -201,9 +206,12 @@ public actor TorrentHandle {
     /// Announce to all tracker tiers concurrently.
     private func announceToAllTrackers(trackerMgr: TrackerManager, params: AnnounceParams) async {
         if let response = try? await trackerMgr.announce(params: params) {
+            TorrentLog.session("announce OK peers=\(response.peers.count) interval=\(response.interval)")
             for (address, port) in response.peers {
                 await peerManager.addPeer(address: address, port: port)
             }
+        } else {
+            TorrentLog.error("Session", "announce failed or empty response")
         }
     }
 
@@ -282,10 +290,19 @@ public actor TorrentHandle {
     /// Download only pieces belonging to `fileIndex`, in start→end order when `sequential` is true.
     /// No-op if metadata is missing or the file index is invalid.
     public func prioritizeFile(_ fileIndex: Int, sequential: Bool = true) async {
-        guard let info else { return }
+        guard let info else {
+            TorrentLog.session("prioritizeFile(\(fileIndex)) skipped — no metadata")
+            return
+        }
         let storage = FileStorage(info: info)
-        guard let range = storage.pieceRange(forFileIndex: fileIndex) else { return }
+        guard let range = storage.pieceRange(forFileIndex: fileIndex) else {
+            TorrentLog.session("prioritizeFile(\(fileIndex)) skipped — invalid file index")
+            return
+        }
         let mode: PiecePickMode = sequential ? .sequential : .rarestFirst
+        TorrentLog.session(
+            "prioritizeFile(\(fileIndex)) range=\(range.lowerBound)..<\(range.upperBound) mode=\(mode) piecesTotal=\(info.pieceCount)"
+        )
 
         await peerManager.applyPiecePriority(range: range, mode: mode)
         if var local = piecePicker {

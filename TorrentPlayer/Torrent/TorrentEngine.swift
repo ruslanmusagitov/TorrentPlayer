@@ -172,13 +172,16 @@ final class TorrentEngine {
             let session = Session(settings: settings)
             do {
                 try await session.startDHT()
+                TPLog.engine("DHT started")
             } catch {
-                // DHT is optional for magnets that include tracker URLs.
+                TPLog.engine("DHT start failed (optional): \(error.localizedDescription)")
             }
             self.session = session
             phase = .ready
+            TPLog.engine("Session ready savePath=\(downloads.path)")
         } catch {
             phase = .error(error.localizedDescription)
+            TPLog.error("bootstrap failed: \(error.localizedDescription)")
         }
         #else
         phase = .unsupportedPlatform
@@ -207,6 +210,7 @@ final class TorrentEngine {
         phase = .adding
         var pendingInfoHash: InfoHash?
         await Task.yield()
+        TPLog.engine("addMagnet begin uriLen=\(trimmed.count)")
 
         do {
             let downloads = try Self.downloadsDirectory()
@@ -215,6 +219,7 @@ final class TorrentEngine {
                 throw AddTorrentError.noInfoHash
             }
             pendingInfoHash = infoHash
+            TPLog.engine("addMagnet infoHash=\(infoHash)")
 
             let handle = try await session.addTorrent(params)
             activeHandle = handle
@@ -224,6 +229,7 @@ final class TorrentEngine {
             let info: TorrentInfo
             do {
                 info = try await handle.waitForMetadata(timeout: metadataTimeoutSeconds)
+                TPLog.engine("metadata OK name=\(info.name) files=\(info.files.count) pieces=\(info.pieceCount)")
             } catch is TorrentError {
                 await session.removeTorrent(infoHash)
                 pendingInfoHash = nil
@@ -303,6 +309,9 @@ final class TorrentEngine {
         let fileIndex = file.id
         let leadBytes = min(streamingLeadBytes, max(file.size, 1))
         usesExternalPlayer = !Self.isAVPlayerCompatible(path: file.path)
+        TPLog.playback(
+            "preparePlayback file=\(file.path) index=\(fileIndex) leadBytes=\(leadBytes) external=\(usesExternalPlayer) disk=\(diskURL.path)"
+        )
 
         do {
             await applySequentialPriorityForSelection()
@@ -312,7 +321,10 @@ final class TorrentEngine {
                 bytes: leadBytes,
                 generation: generation
             )
-            guard generation == playbackGeneration else { return }
+            guard generation == playbackGeneration else {
+                TPLog.playback("preparePlayback aborted (stale generation after lead wait)")
+                return
+            }
 
             let waiter: LocalHTTPStreamServer.ByteWaiter = { offset, length in
                 do {
@@ -337,6 +349,7 @@ final class TorrentEngine {
             try await server.start()
             guard generation == playbackGeneration else {
                 server.stop()
+                TPLog.playback("preparePlayback aborted (stale generation after server start)")
                 return
             }
             guard let url = server.streamURL else {
@@ -346,18 +359,23 @@ final class TorrentEngine {
             streamServer = server
             playbackURL = url
             playbackPhase = .ready
+            TPLog.playback("stream ready url=\(url.absoluteString)")
 
             if usesExternalPlayer {
+                TPLog.playback("opening external player for MKV/unsupported container")
                 NSWorkspace.shared.open(url)
             }
         } catch is TorrentError {
             guard generation == playbackGeneration else { return }
+            TPLog.error("playback buffer timeout")
             playbackPhase = .failed(TorrentEngineError.playbackBufferTimeout.localizedDescription)
         } catch let error as TorrentEngineError {
             guard generation == playbackGeneration else { return }
+            TPLog.error("playback failed: \(error.localizedDescription)")
             playbackPhase = .failed(error.localizedDescription)
         } catch {
             guard generation == playbackGeneration else { return }
+            TPLog.error("playback server failed: \(error.localizedDescription)")
             playbackPhase = .failed(
                 TorrentEngineError.playbackServerFailed(error.localizedDescription).localizedDescription
             )
@@ -394,6 +412,11 @@ final class TorrentEngine {
         peersConnected = status.numPeers
         piecesCompleted = status.piecesCompleted
         piecesTotal = status.piecesTotal
+        if playbackPhase == .buffering {
+            TPLog.playback(
+                "status peers=\(status.numPeers) pieces=\(status.piecesCompleted)/\(status.piecesTotal) progress=\(String(format: "%.4f", status.progress)) rate=\(Int(status.downloadRate))B/s"
+            )
+        }
         #endif
     }
 

@@ -17,3 +17,4 @@ Local copy of [warppipe/swift-torrent](https://github.com/warppipe/swift-torrent
   - After magnet metadata: disconnect metadata-era peers, re-announce with real `left`, send empty bitfield on connect.
   - Create `PeerState` before TCP handshake completes so early bitfield/unchoke messages are not dropped.
   - Piece completion requires all block offsets (not just buffer length) before SHA-1 verify.
+  - `TorrentLog` (OSLog + optional file) for peer/piece/session diagnostics.
