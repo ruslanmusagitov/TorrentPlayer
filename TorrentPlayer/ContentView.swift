@@ -2,79 +2,66 @@
 //  ContentView.swift
 //  TorrentPlayer
 //
-//  Created by Ruslan on 21.07.2026.
+//  Root shell: header + side/bottom nav + four Kinetic Torrent stubs.
 //
 
 import SwiftUI
-import SwiftData
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
+    @State private var selection: AppDestination = .load
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    private var usesSideNav: Bool {
+        #if os(macOS)
+        true
+        #else
+        sizeClass == .regular
+        #endif
+    }
 
     var body: some View {
-        NavigationViewWrapper {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
-                    }
+        VStack(spacing: 0) {
+            AppHeaderBar()
+
+            if usesSideNav {
+                HStack(spacing: 0) {
+                    SideNavBar(selection: $selection)
+                    destinationView
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .onDelete(perform: deleteItems)
-            }
-#if os(macOS)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
-#endif
-            .toolbar {
-#if os(iOS)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-#endif
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
+            } else {
+                destinationView
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                BottomNavBar(selection: $selection)
             }
         }
+        .background(KTColor.background.ignoresSafeArea())
+        #if os(macOS)
+        .frame(minWidth: 900, minHeight: 640)
+        #endif
     }
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
+    @ViewBuilder
+    private var destinationView: some View {
+        switch selection {
+        case .load:
+            LoadMagnetView {
+                selection = .files
+            }
+        case .files:
+            SelectFileView {
+                selection = .player
+            }
+        case .player:
+            StreamingPlayerView()
+        case .history:
+            TorrentHistoryView {
+                selection = .files
             }
         }
-    }
-}
-
-fileprivate struct NavigationViewWrapper<Content: View>: View {
-    let content: () -> Content
-
-    var body: some View {
-#if os(macOS)
-        NavigationSplitView {
-            content()
-        } detail: {
-            Text("Select an item")
-        }
-#else
-        content()
-#endif
     }
 }
 
 #Preview {
     ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
 }
