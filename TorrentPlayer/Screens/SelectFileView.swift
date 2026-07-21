@@ -32,7 +32,7 @@ struct SelectFileView: View {
                     } else if engine.activeTorrent == nil {
                         emptyState
                     } else if files.isEmpty {
-                        emptyState
+                        noFilesState
                     } else if engine.activeTorrent?.videoFiles.isEmpty == true {
                         noVideoState
                     } else {
@@ -103,6 +103,24 @@ struct SelectFileView: View {
                 .font(KTTypography.labelCaps())
                 .tracking(1.1)
             Text("Paste a magnet link on the Load screen to see file contents here.")
+                .font(KTTypography.bodyMD())
+                .foregroundStyle(KTColor.onSurfaceVariant)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(KTSpacing.lg)
+        .background(KTColor.surfaceContainerLowest)
+        .thickBorder()
+    }
+
+    private var noFilesState: some View {
+        VStack(spacing: KTSpacing.sm) {
+            Image(systemName: "folder")
+                .font(.system(size: 40))
+            Text("NO FILES IN TORRENT")
+                .font(KTTypography.labelCaps())
+                .tracking(1.1)
+            Text("This torrent loaded successfully but contains no files.")
                 .font(KTTypography.bodyMD())
                 .foregroundStyle(KTColor.onSurfaceVariant)
                 .multilineTextAlignment(.center)
