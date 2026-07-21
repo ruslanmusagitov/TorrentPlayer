@@ -109,6 +109,14 @@ public actor PeerManager {
         connections[key] = conn
         peerInfos[key] = PeerInfo(id: Data(), address: address, port: port)
 
+        // Create PeerState BEFORE connect completes. Peers send bitfield immediately
+        // after handshake; if state is missing those messages are dropped and we
+        // never learn which pieces they have (0 downloads forever).
+        let pc = pieceCount > 0 ? pieceCount : 1
+        let state = PeerState(pieceCount: pc)
+        peerStates[key] = state
+        await state.setAmInterested(true)
+
         // Set up message callbacks
         conn.onMessage = { [weak self] message in
             guard let self else { return }
@@ -132,13 +140,14 @@ public actor PeerManager {
     private func onPeerConnected(key: String, conn: PeerConnection) async {
         connectedPeers.insert(key)
 
-        let pc = pieceCount > 0 ? pieceCount : 1
-        let state = PeerState(pieceCount: pc)
-        await state.setAmInterested(true)
-        if conn.supportsExtensions {
+        // Keep existing state — it may already hold the peer's bitfield.
+        if peerStates[key] == nil {
+            let pc = pieceCount > 0 ? pieceCount : 1
+            peerStates[key] = PeerState(pieceCount: pc)
+        }
+        if let state = peerStates[key] {
             await state.setAmInterested(true)
         }
-        peerStates[key] = state
 
         // Send our bitfield once we know the piece count (post-metadata).
         if pieceCount > 0 {
@@ -154,6 +163,9 @@ public actor PeerManager {
             let extHandshake = await metaEx.buildExtendedHandshake()
             try? await conn.send(.extended(id: 0, payload: extHandshake))
         }
+
+        // Peer may already have unchoked us while state existed during handshake.
+        await fillRequests(for: key)
     }
 
     private func handleDisconnect(key: String) {
@@ -218,11 +230,13 @@ public actor PeerManager {
             guard let pm = pieceManager else { break }
             await pm.addBlock(pieceIndex: pieceIndex, offset: offset, data: block)
 
-            // Check if all blocks received for this piece
-            let expectedSize = await pm.expectedPieceSize(pieceIndex)
-            let buffer = await pm.getPieceBuffer(pieceIndex)
-            if let buf = buffer, buf.count >= expectedSize {
-                await onPieceComplete(index: pieceIndex, data: buf)
+            // Only verify when every block has arrived (buffer.length alone is wrong
+            // for out-of-order blocks that pad the buffer with zeros).
+            if await pm.hasAllBlocks(pieceIndex) {
+                let expectedSize = await pm.expectedPieceSize(pieceIndex)
+                if let buf = await pm.getPieceBuffer(pieceIndex), buf.count >= expectedSize {
+                    await onPieceComplete(index: pieceIndex, data: buf)
+                }
             }
 
             await fillRequests(for: key)
@@ -274,10 +288,15 @@ public actor PeerManager {
             let pieceSize = await pm.expectedPieceSize(pieceIndex)
             let blockSize = 16384
             var offset = 0
+            var sent = false
             while offset < pieceSize {
                 let canReq = await state.canRequest
                 guard canReq else { break }
                 let length = min(blockSize, pieceSize - offset)
+                if await pm.hasReceivedBlock(pieceIndex: pieceIndex, offset: offset) {
+                    offset += blockSize
+                    continue
+                }
                 let request = PeerState.BlockRequest(pieceIndex: pieceIndex, offset: offset, length: length)
                 if !(await state.hasPending(request)) {
                     await state.addPendingRequest(request)
@@ -286,9 +305,11 @@ public actor PeerManager {
                         begin: UInt32(offset),
                         length: UInt32(length)
                     ))
+                    sent = true
                 }
                 offset += blockSize
             }
+            if !sent { break } // Nothing left to request for this piece from this peer
             break // One piece at a time per fill cycle
         }
     }

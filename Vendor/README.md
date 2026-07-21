@@ -15,3 +15,5 @@ Local copy of [warppipe/swift-torrent](https://github.com/warppipe/swift-torrent
   - `FileStorage.leadingPieceRange` / `pieceRange(fileOffset:length:)` map file byte ranges to piece indices.
   - `TorrentHandle.waitForLeadingBytes` / `waitForFileBytes` poll until contiguous pieces are on disk.
   - After magnet metadata: disconnect metadata-era peers, re-announce with real `left`, send empty bitfield on connect.
+  - Create `PeerState` before TCP handshake completes so early bitfield/unchoke messages are not dropped.
+  - Piece completion requires all block offsets (not just buffer length) before SHA-1 verify.

@@ -272,7 +272,7 @@ public actor TorrentHandle {
             totalDownloaded: totalDownloaded,
             totalUploaded: totalUploaded,
             totalSize: info?.totalSize ?? 0,
-            numPeers: await peerManager.connectionCount,
+            numPeers: await peerManager.connectedCount,
             numSeeds: 0,
             piecesCompleted: completed?.popcount ?? 0,
             piecesTotal: info?.pieceCount ?? 0
