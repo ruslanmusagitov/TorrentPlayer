@@ -4,6 +4,7 @@
 //
 //  Task #3: torrent session on macOS (SwiftTorrent SPM).
 //  Task #4: metadata fetch and file list.
+//  Task #5: video file selection.
 //
 
 import Foundation
@@ -29,6 +30,12 @@ final class TorrentEngine {
     private(set) var phase: Phase = .idle
     private(set) var lastMagnetURI: String?
     private(set) var activeTorrent: ActiveTorrent?
+    private(set) var selectedFileID: Int?
+
+    var selectedFile: TorrentFileItem? {
+        guard let selectedFileID, let activeTorrent else { return nil }
+        return activeTorrent.files.first { $0.id == selectedFileID && $0.isVideo }
+    }
 
     #if os(macOS)
     private var session: Session?
@@ -81,6 +88,20 @@ final class TorrentEngine {
         }
     }
 
+    func selectFile(id: Int) {
+        guard let activeTorrent,
+              activeTorrent.videoFiles.contains(where: { $0.id == id })
+        else { return }
+        selectedFileID = id
+    }
+
+    /// Test helper: simulates a successful metadata load without the torrent session.
+    func applyLoadedTorrentForTesting(_ torrent: ActiveTorrent) {
+        activeTorrent = torrent
+        selectedFileID = torrent.defaultSelectedFileID
+        phase = .loaded(torrent)
+    }
+
     func bootstrap() async {
         guard case .idle = phase else { return }
         phase = .starting
@@ -125,6 +146,7 @@ final class TorrentEngine {
 
         let previousTorrent = activeTorrent
         let previousInfoHash = activeInfoHash
+        let previousSelectedFileID = selectedFileID
 
         phase = .adding
         var pendingInfoHash: InfoHash?
@@ -153,6 +175,7 @@ final class TorrentEngine {
                 activeInfoHash = previousInfoHash
                 failOrRestore(
                     previousTorrent: previousTorrent,
+                    previousSelectedFileID: previousSelectedFileID,
                     message: TorrentEngineError.metadataTimeout.localizedDescription
                 )
                 throw TorrentEngineError.metadataTimeout
@@ -165,6 +188,7 @@ final class TorrentEngine {
             let hash = infoHash.description
             let torrent = ActiveTorrent.from(info: info, infoHash: hash)
             activeTorrent = torrent
+            selectedFileID = torrent.defaultSelectedFileID
             activeInfoHash = infoHash
             lastMagnetURI = trimmed
             pendingInfoHash = nil
@@ -178,7 +202,11 @@ final class TorrentEngine {
             }
             activeHandle = nil
             activeInfoHash = previousInfoHash
-            failOrRestore(previousTorrent: previousTorrent, message: error.localizedDescription)
+            failOrRestore(
+                previousTorrent: previousTorrent,
+                previousSelectedFileID: previousSelectedFileID,
+                message: error.localizedDescription
+            )
             throw error
         } catch {
             if let pendingInfoHash {
@@ -186,7 +214,11 @@ final class TorrentEngine {
             }
             activeHandle = nil
             activeInfoHash = previousInfoHash
-            failOrRestore(previousTorrent: previousTorrent, message: error.localizedDescription)
+            failOrRestore(
+                previousTorrent: previousTorrent,
+                previousSelectedFileID: previousSelectedFileID,
+                message: error.localizedDescription
+            )
             throw error
         }
         #else
@@ -196,13 +228,21 @@ final class TorrentEngine {
     }
 
     #if os(macOS)
-    private func failOrRestore(previousTorrent: ActiveTorrent?, message: String) {
+    /// Surfaces the failure while keeping a previously loaded torrent (if any)
+    /// so Files can still show it; Load UI reads `phase == .error`.
+    private func failOrRestore(
+        previousTorrent: ActiveTorrent?,
+        previousSelectedFileID: Int?,
+        message: String
+    ) {
         if let previousTorrent {
             activeTorrent = previousTorrent
-            phase = .loaded(previousTorrent)
+            selectedFileID = previousSelectedFileID
         } else {
-            phase = .error(message)
+            activeTorrent = nil
+            selectedFileID = nil
         }
+        phase = .error(message)
     }
     #endif
 

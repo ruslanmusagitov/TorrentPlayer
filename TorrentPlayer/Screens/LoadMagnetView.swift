@@ -209,7 +209,7 @@ struct LoadMagnetView: View {
             try await engine.addMagnet(magnetText)
             onLoad?()
         } catch {
-            // Engine already set .error / restored previous torrent for UI feedback.
+            // Engine already set .error for UI feedback (keeps previous torrent if any).
         }
     }
 }

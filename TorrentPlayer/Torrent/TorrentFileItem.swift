@@ -32,6 +32,14 @@ struct ActiveTorrent: Equatable, Sendable {
     var formattedTotalSize: String {
         TorrentFileFormatting.formatSize(totalSize)
     }
+
+    var videoFiles: [TorrentFileItem] {
+        files.filter(\.isVideo)
+    }
+
+    var defaultSelectedFileID: Int? {
+        videoFiles.first?.id
+    }
 }
 
 enum TorrentFileFormatting {
