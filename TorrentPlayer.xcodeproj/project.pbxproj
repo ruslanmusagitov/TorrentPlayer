@@ -202,7 +202,7 @@
 			mainGroup = 3B59C207300F33FA00231BBF;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				3B59C240300F33FC00231BBF /* XCRemoteSwiftPackageReference "swift-torrent" */,
+				3B59C240300F33FC00231BBF /* XCLocalSwiftPackageReference "swift-torrent" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3B59C211300F33FA00231BBF /* Products */;
@@ -408,7 +408,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = TorrentPlayer/Info.plist;
+				INFOPLIST_FILE = Info.plist;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -454,7 +454,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = TorrentPlayer/Info.plist;
+				INFOPLIST_FILE = Info.plist;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -629,21 +629,17 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		3B59C240300F33FC00231BBF /* XCRemoteSwiftPackageReference "swift-torrent" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/warppipe/swift-torrent";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
+/* Begin XCLocalSwiftPackageReference section */
+		3B59C240300F33FC00231BBF /* XCLocalSwiftPackageReference "swift-torrent" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Vendor/swift-torrent;
 		};
-/* End XCRemoteSwiftPackageReference section */
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		3B59C241300F33FC00231BBF /* SwiftTorrent */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 3B59C240300F33FC00231BBF /* XCRemoteSwiftPackageReference "swift-torrent" */;
+			package = 3B59C240300F33FC00231BBF /* XCLocalSwiftPackageReference "swift-torrent" */;
 			productName = SwiftTorrent;
 		};
 /* End XCSwiftPackageProductDependency section */

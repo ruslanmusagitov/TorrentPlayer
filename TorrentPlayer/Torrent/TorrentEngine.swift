@@ -38,7 +38,7 @@ final class TorrentEngine {
 
     private let metadataTimeoutSeconds: Int
 
-    init(metadataTimeoutSeconds: Int = 90) {
+    init(metadataTimeoutSeconds: Int = 120) {
         self.metadataTimeoutSeconds = metadataTimeoutSeconds
     }
 

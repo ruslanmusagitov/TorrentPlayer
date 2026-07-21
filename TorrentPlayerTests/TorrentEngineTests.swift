@@ -4,6 +4,7 @@
 //
 
 import Testing
+import Foundation
 @testable import TorrentPlayer
 #if os(macOS)
 import SwiftTorrent
@@ -29,6 +30,22 @@ struct TorrentEngineTests {
         let params = try AddTorrentParams.fromMagnet(magnet, savePath: "/tmp")
         #expect(params.infoHash != nil)
         #expect(params.magnetLink?.trackers.isEmpty == false)
+    }
+
+    @Test func httpTrackerAnnounceReturnsPeers() async throws {
+        let hash = try #require(InfoHash(hex: "6950F7068A75E63A8AD6C2B1AA6B63E10B18B51D"))
+        let peerID = Data("-TP0001-012345678901".utf8)
+        let tracker = HTTPTracker(announceURL: "http://bt.t-ru.org/ann?magnet")
+        let response = try await tracker.announce(
+            params: AnnounceParams(
+                infoHash: hash,
+                peerID: peerID,
+                port: 6881,
+                left: 1,
+                event: "started"
+            )
+        )
+        #expect(!response.peers.isEmpty)
     }
     #endif
 
