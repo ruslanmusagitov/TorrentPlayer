@@ -38,6 +38,7 @@ public actor MetadataExchange {
 
     /// Handle an incoming extended message.
     public func handleExtendedMessage(id: UInt8, payload: Data) -> Result {
+        if isComplete { return .none }
         if id == 0 {
             return handleExtendedHandshake(payload: payload)
         } else if id == localMetadataID {
@@ -47,6 +48,7 @@ public actor MetadataExchange {
     }
 
     private func handleExtendedHandshake(payload: Data) -> Result {
+        if isComplete { return .none }
         let decoder = BencodeDecoder()
         guard let value = try? decoder.decode(payload) else { return .none }
 
@@ -74,6 +76,7 @@ public actor MetadataExchange {
     }
 
     private func handleMetadataMessage(payload: Data) -> Result {
+        if isComplete { return .none }
         let decoder = BencodeDecoder()
         // The payload is: bencoded dict + raw data
         // We need to find where the bencoded dict ends
@@ -91,7 +94,7 @@ public actor MetadataExchange {
             metadataPieces[pieceIndex] = pieceData
 
             // Check if we have all pieces
-            if metadataPieces.count == totalPieces {
+            if metadataPieces.count == totalPieces, totalPieces > 0 {
                 return assembleMetadata()
             }
             return .none
@@ -105,6 +108,8 @@ public actor MetadataExchange {
     }
 
     private func assembleMetadata() -> Result {
+        if isComplete { return .none }
+
         var assembled = Data()
         for i in 0..<totalPieces {
             guard let piece = metadataPieces[i] else { return .none }

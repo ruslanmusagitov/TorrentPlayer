@@ -129,11 +129,20 @@ public actor TorrentHandle {
     }
 
     private func onMetadataReceived(info: TorrentInfo) async {
+        // Duplicate ut_metadata completions must not reset the picker / drop peers.
+        if self.info != nil, pieceManager != nil {
+            TorrentLog.session("onMetadataReceived ignored (already set up)")
+            return
+        }
+
         TorrentLog.session(
             "onMetadataReceived name=\(info.name) pieces=\(info.pieceCount) pieceLength=\(info.pieceLength) size=\(info.totalSize)"
         )
         await setupDownloadComponents(info: info)
         state = .downloading
+        // Stop magnet metadata exchange — further extended messages are noise.
+        metadataExchange = nil
+        await peerManager.configureMagnet(metadataExchange: nil)
         try? await diskIO?.allocateFiles()
         startDownloadMonitor()
 
