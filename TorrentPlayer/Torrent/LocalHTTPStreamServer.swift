@@ -29,7 +29,7 @@ final class LocalHTTPStreamServer: @unchecked Sendable {
         fileURL: URL,
         fileSize: Int64,
         contentType: String = "application/octet-stream",
-        rangeWaitSeconds: Int = 30,
+        rangeWaitSeconds: Int = 600,
         waitForBytes: @escaping ByteWaiter = { _, _ in true }
     ) {
         self.fileURL = fileURL
@@ -42,7 +42,11 @@ final class LocalHTTPStreamServer: @unchecked Sendable {
     func start() async throws {
         let parameters = NWParameters.tcp
         parameters.allowLocalEndpointReuse = true
-        let listener = try NWListener(using: parameters, on: .any)
+        parameters.requiredLocalEndpoint = NWEndpoint.hostPort(
+            host: NWEndpoint.Host("127.0.0.1"),
+            port: 0
+        )
+        let listener = try NWListener(using: parameters)
         listener.newConnectionHandler = { [weak self] connection in
             self?.handle(connection)
         }

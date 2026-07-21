@@ -63,6 +63,7 @@ final class TorrentEngine {
     private var activeHandle: TorrentHandle?
     private var activeInfoHash: InfoHash?
     private var streamServer: LocalHTTPStreamServer?
+    private var playbackGeneration: UInt64 = 0
     #endif
 
     private let metadataTimeoutSeconds: Int
@@ -270,6 +271,7 @@ final class TorrentEngine {
     func preparePlayback() async {
         #if os(macOS)
         stopPlayback()
+        let generation = playbackGeneration
 
         guard let file = selectedFile, let handle = activeHandle else {
             playbackPhase = .failed(TorrentEngineError.noSelectedFile.localizedDescription)
@@ -291,6 +293,7 @@ final class TorrentEngine {
                 bytes: leadBytes,
                 timeout: streamingLeadTimeoutSeconds
             )
+            guard generation == playbackGeneration else { return }
 
             let waiter: LocalHTTPStreamServer.ByteWaiter = { offset, length in
                 do {
@@ -298,7 +301,7 @@ final class TorrentEngine {
                         fileIndex: fileIndex,
                         fileOffset: offset,
                         length: length,
-                        timeout: 1
+                        timeout: 2
                     )
                     return true
                 } catch {
@@ -313,6 +316,10 @@ final class TorrentEngine {
                 waitForBytes: waiter
             )
             try await server.start()
+            guard generation == playbackGeneration else {
+                server.stop()
+                return
+            }
             guard let url = server.streamURL else {
                 server.stop()
                 throw TorrentEngineError.playbackServerFailed("No port bound")
@@ -321,10 +328,13 @@ final class TorrentEngine {
             playbackURL = url
             playbackPhase = .ready
         } catch is TorrentError {
+            guard generation == playbackGeneration else { return }
             playbackPhase = .failed(TorrentEngineError.playbackBufferTimeout.localizedDescription)
         } catch let error as TorrentEngineError {
+            guard generation == playbackGeneration else { return }
             playbackPhase = .failed(error.localizedDescription)
         } catch {
+            guard generation == playbackGeneration else { return }
             playbackPhase = .failed(
                 TorrentEngineError.playbackServerFailed(error.localizedDescription).localizedDescription
             )
@@ -336,6 +346,7 @@ final class TorrentEngine {
 
     func stopPlayback() {
         #if os(macOS)
+        playbackGeneration += 1
         streamServer?.stop()
         streamServer = nil
         #endif
