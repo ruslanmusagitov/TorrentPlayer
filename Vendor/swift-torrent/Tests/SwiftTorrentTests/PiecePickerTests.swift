@@ -104,6 +104,16 @@ final class PiecePickerTests: XCTestCase {
         XCTAssertNil(picker.pick(have: haveDone, peerHas: peerBF))
     }
 
+    func testEmptyInterestedRangePicksNothing() {
+        var picker = PiecePicker(pieceCount: 4)
+        picker.setSequential(range: 0..<0)
+
+        var peerBF = Bitfield(count: 4)
+        for i in 0..<4 { peerBF.set(i) }
+        let have = Bitfield(count: 4)
+        XCTAssertNil(picker.pick(have: have, peerHas: peerBF))
+    }
+
     func testSequentialPickMultipleInOrder() {
         var picker = PiecePicker(pieceCount: 5)
         picker.setSequential(range: 1..<4)

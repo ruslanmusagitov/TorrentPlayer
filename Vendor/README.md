@@ -9,4 +9,5 @@ Local copy of [warppipe/swift-torrent](https://github.com/warppipe/swift-torrent
 - Sequential / selected-file download (task #6):
   - `FileStorage.pieceRange(forFileIndex:)` maps a file to its piece index range (including boundary pieces).
   - `PiecePicker` supports `sequential` mode restricted to an interested range (lowest missing index first); `clearPriority()` restores rarest-first over all pieces.
-  - `TorrentHandle.prioritizeFile(_:sequential:)` updates the live picker in `PeerManager` (value-type copy).
+  - After metadata, picker starts with an empty interested range (no piece requests) until `TorrentHandle.prioritizeFile` sets the selected file.
+  - `prioritizeFile` updates the live picker in `PeerManager`, cancels in-flight block requests, and refills peer pipelines.

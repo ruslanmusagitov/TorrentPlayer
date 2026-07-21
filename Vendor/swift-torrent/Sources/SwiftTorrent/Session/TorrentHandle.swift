@@ -57,7 +57,9 @@ public actor TorrentHandle {
     private func setupDownloadComponents(info: TorrentInfo) async {
         self.info = info
         let pm = PieceManager(info: info)
-        let pp = PiecePicker(pieceCount: info.pieceCount)
+        var pp = PiecePicker(pieceCount: info.pieceCount)
+        // Hold piece requests until prioritizeFile sets an interested range.
+        pp.setSequential(range: 0..<0)
         let fs = FileStorage(info: info)
         let dio = DiskIO(basePath: savePath, fileStorage: fs)
         self.pieceManager = pm
@@ -251,9 +253,7 @@ public actor TorrentHandle {
         guard let range = storage.pieceRange(forFileIndex: fileIndex) else { return }
         let mode: PiecePickMode = sequential ? .sequential : .rarestFirst
 
-        await peerManager.modifyPiecePicker { picker in
-            picker.setPriority(range: range, mode: mode)
-        }
+        await peerManager.applyPiecePriority(range: range, mode: mode)
         if var local = piecePicker {
             local.setPriority(range: range, mode: mode)
             piecePicker = local
