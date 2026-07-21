@@ -2,16 +2,20 @@
 //  TorrentPlayerApp.swift
 //  TorrentPlayer
 //
-//  Created by Ruslan on 21.07.2026.
-//
 
 import SwiftUI
 
 @main
 struct TorrentPlayerApp: App {
+    @State private var engine = TorrentEngine()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(engine)
+                .task {
+                    await engine.bootstrap()
+                }
         }
     }
 }

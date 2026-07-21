@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(TorrentEngine.self) private var engine
     @State private var selection: AppDestination = .load
     @Environment(\.horizontalSizeClass) private var sizeClass
 
@@ -64,4 +65,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+        .environment(TorrentEngine())
 }
