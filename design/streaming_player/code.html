@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,400;0,500;0,700;0,800;0,900;1,800;1,900&amp;family=Space+Mono:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed": "#e0e0ff",
+                        "inverse-surface": "#303030",
+                        "on-tertiary-container": "#293600",
+                        "on-tertiary-fixed-variant": "#3c4d00",
+                        "surface-container-low": "#f3f3f3",
+                        "on-background": "#1b1b1b",
+                        "on-tertiary-fixed": "#161e00",
+                        "on-surface-variant": "#5a4136",
+                        "error": "#ba1a1a",
+                        "on-secondary-fixed-variant": "#0000ef",
+                        "on-tertiary": "#ffffff",
+                        "surface-bright": "#f9f9f9",
+                        "surface-container": "#eeeeee",
+                        "surface": "#f9f9f9",
+                        "primary": "#a04100",
+                        "on-secondary": "#ffffff",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#f1f1f1",
+                        "on-primary": "#ffffff",
+                        "surface-variant": "#e2e2e2",
+                        "secondary": "#0001c0",
+                        "outline-variant": "#e2bfb0",
+                        "tertiary-fixed-dim": "#abd600",
+                        "surface-tint": "#a04100",
+                        "on-surface": "#1b1b1b",
+                        "tertiary-container": "#83a500",
+                        "tertiary-fixed": "#c3f400",
+                        "surface-dim": "#dadada",
+                        "error-container": "#ffdad6",
+                        "on-secondary-fixed": "#00006e",
+                        "surface-container-high": "#e8e8e8",
+                        "primary-fixed": "#ffdbcc",
+                        "outline": "#8e7164",
+                        "background": "#f9f9f9",
+                        "on-secondary-container": "#b6baff",
+                        "on-error": "#ffffff",
+                        "primary-container": "#ff6b00",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-container": "#572000",
+                        "on-primary-fixed": "#351000",
+                        "inverse-primary": "#ffb693",
+                        "tertiary": "#506600",
+                        "secondary-fixed-dim": "#bec2ff",
+                        "secondary-container": "#080cff",
+                        "surface-container-highest": "#e2e2e2",
+                        "primary-fixed-dim": "#ffb693",
+                        "on-primary-fixed-variant": "#7a3000"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "lg": "40px",
+                        "border-thick": "3px",
+                        "md": "24px",
+                        "sm": "16px",
+                        "shadow-offset": "4px",
+                        "xs": "8px",
+                        "base": "4px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Hanken Grotesk"],
+                        "technical-sm": ["Space Mono"],
+                        "body-md": ["Hanken Grotesk"],
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "display": ["Hanken Grotesk"],
+                        "technical-md": ["Space Mono"],
+                        "label-caps": ["Space Mono"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["32px", {"lineHeight": "1.2", "fontWeight": "800"}],
+                        "technical-sm": ["12px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                        "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "500"}],
+                        "headline-lg-mobile": ["24px", {"lineHeight": "1.2", "fontWeight": "800"}],
+                        "display": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "900"}],
+                        "technical-md": ["14px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                        "label-caps": ["11px", {"lineHeight": "1", "letterSpacing": "0.1em", "fontWeight": "700"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .neo-shadow { box-shadow: 4px 4px 0px 0px #1b1b1b; }
+        .neo-shadow-active { box-shadow: 0px 0px 0px 0px #1b1b1b; transform: translate(4px, 4px); }
+        .neo-shadow-hover { box-shadow: 8px 8px 0px 0px #1b1b1b; }
+        .hazard-stripe {
+            background: repeating-linear-gradient(
+                45deg,
+                #e2e2e2,
+                #e2e2e2 10px,
+                #dadada 10px,
+                #dadada 20px
+            );
+        }
+        .border-b-thick { border-bottom-width: 3px; }
+        .border-t-thick { border-top-width: 3px; }
+        .border-r-thick { border-right-width: 3px; }
+        .border-l-thick { border-left-width: 3px; }
+        .border-thick { border-width: 3px; }
+        
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md overflow-x-hidden">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-md h-20 bg-background z-50 fixed top-0 border-b-thick border-on-background shadow-shadow-offset shadow-on-background">
+<div class="flex items-center gap-xs">
+<span class="material-symbols-outlined text-primary" data-icon="speed">speed</span>
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile font-black text-primary italic uppercase tracking-tighter">TORRENT_PLAYER</h1>
+</div>
+<button class="material-symbols-outlined text-on-background hover:translate-x-1 hover:translate-y-1 hover:shadow-none active:translate-x-shadow-offset active:translate-y-shadow-offset active:shadow-none transition-all duration-75" data-icon="settings">settings</button>
+</header>
+<div class="flex pt-20 min-h-screen">
+<!-- NavigationDrawer -->
+<aside class="hidden md:flex flex-col h-screen fixed left-0 top-0 z-40 bg-surface w-64 border-r-thick border-on-background pt-20">
+<div class="p-md border-b border-on-background">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">NAVIGATION</span>
+</div>
+<nav class="flex flex-col">
+<a class="flex items-center gap-sm p-md text-on-background border-b border-on-background font-label-caps text-label-caps uppercase hover:bg-secondary-fixed transition-transform duration-75 active:scale-95" href="#">
+<span class="material-symbols-outlined" data-icon="add_box">add_box</span> LOAD
+                </a>
+<a class="flex items-center gap-sm p-md text-on-background border-b border-on-background font-label-caps text-label-caps uppercase hover:bg-secondary-fixed transition-transform duration-75 active:scale-95" href="#">
+<span class="material-symbols-outlined" data-icon="folder_open">folder_open</span> FILES
+                </a>
+<a class="flex items-center gap-sm p-md bg-primary dark:bg-primary-container text-on-primary dark:text-on-primary-container border-thick border-on-background font-label-caps text-label-caps uppercase" href="#">
+<span class="material-symbols-outlined" data-icon="play_circle">play_circle</span> PLAYER
+                </a>
+<a class="flex items-center gap-sm p-md text-on-background border-b border-on-background font-label-caps text-label-caps uppercase hover:bg-secondary-fixed transition-transform duration-75 active:scale-95" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span> HISTORY
+                </a>
+</nav>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 md:ml-64 p-sm md:p-lg mb-20 md:mb-0">
+<div class="max-w-6xl mx-auto space-y-md">
+<!-- Filename Header -->
+<div class="bg-secondary-container p-sm border-thick border-on-background neo-shadow">
+<h2 class="font-headline-lg-mobile text-headline-lg-mobile text-on-secondary uppercase italic">S04E12_HIGH_VELOCITY_STREAM_X265.MKV</h2>
+</div>
+<!-- Video Player Canvas Section -->
+<div class="relative w-full aspect-video border-thick border-on-background bg-on-background overflow-hidden group">
+<img class="w-full h-full object-cover opacity-80" data-alt="A cinematic still from a high-budget sci-fi film featuring a futuristic neon city under heavy rain. The lighting is dominated by deep blues and vibrant safety orange highlights, mirroring the Neo-Brutalist color palette. The shot is wide, showing industrial structures and heavy mechanical equipment in the foreground, with sharp contrasts and a grainy, film-noir texture. The overall atmosphere is gritty, technological, and intense." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB8ZqBcFux7PFEPR08oeGBoCPLgXI8mO8-ZKZe801NUCXFgcMBLUSVXd95Vyc-9NjebKzcc3U1SnUG2_-dqBQP-uJEG-3Bu2NJquGuE8_C9C-TNAU8kLPEGwloRlKIJGyYgvziCgnfslxeLyMdil1MUQ_zuq_rb0C56mx1hl5LAM5ccDzncSVfoUZv--Og8veCxNBnHmrQEVSx--xfyB-pI0tyJxGwNmfusxsjZo37yCOkYyQOt01xA"/>
+<!-- Centered Play Overlay -->
+<div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="bg-primary p-lg border-thick border-on-background neo-shadow hover:neo-shadow-hover active:neo-shadow-active transition-all">
+<span class="material-symbols-outlined text-on-primary text-[64px]" data-icon="play_arrow">play_arrow</span>
+</button>
+</div>
+<!-- Bottom Controls Overlay (Visible on Hover) -->
+<div class="absolute bottom-0 left-0 w-full p-md bg-gradient-to-t from-on-background to-transparent pt-12">
+<!-- Controls Row -->
+<div class="flex items-center gap-md">
+<button class="bg-primary-container p-xs border-thick border-on-background neo-shadow active:neo-shadow-active transition-all">
+<span class="material-symbols-outlined text-on-primary-container" data-icon="pause">pause</span>
+</button>
+<button class="bg-white p-xs border-thick border-on-background neo-shadow active:neo-shadow-active transition-all">
+<span class="material-symbols-outlined text-on-background" data-icon="fast_rewind">fast_rewind</span>
+</button>
+<button class="bg-white p-xs border-thick border-on-background neo-shadow active:neo-shadow-active transition-all">
+<span class="material-symbols-outlined text-on-background" data-icon="fast_forward">fast_forward</span>
+</button>
+<div class="flex-1"></div>
+<div class="flex items-center gap-sm bg-white px-sm py-xs border-thick border-on-background">
+<span class="font-technical-sm text-technical-sm text-on-background">VOL</span>
+<div class="w-24 h-4 bg-surface-container border border-on-background relative">
+<div class="absolute inset-0 bg-tertiary w-3/4"></div>
+</div>
+</div>
+<button class="bg-white p-xs border-thick border-on-background neo-shadow active:neo-shadow-active transition-all">
+<span class="material-symbols-outlined text-on-background" data-icon="fullscreen">fullscreen</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Dual Progress Bar Section -->
+<div class="space-y-xs">
+<div class="flex justify-between font-technical-md text-technical-md text-on-background uppercase font-bold">
+<span>00:42:15</span>
+<span>01:58:30</span>
+</div>
+<!-- The Dual Bar -->
+<div class="h-8 border-thick border-on-background bg-surface-container relative">
+<!-- Buffer/Download Progress (Lighter/Patterned) -->
+<div class="absolute top-0 left-0 h-full hazard-stripe border-r border-on-background" style="width: 75%;"></div>
+<!-- Playback Position (Solid Lime Green) -->
+<div class="absolute top-0 left-0 h-full bg-tertiary-container border-r-thick border-on-background" style="width: 35%;">
+<!-- Playhead Pin -->
+<div class="absolute right-[-6px] top-[-8px] w-3 h-10 bg-primary border-2 border-on-background"></div>
+</div>
+</div>
+</div>
+<!-- Technical Stats Bento Grid -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-0 border-thick border-on-background bg-on-background">
+<div class="bg-white p-md border-r-thick md:border-b-0 border-b-thick border-on-background">
+<span class="font-label-caps text-label-caps block text-on-surface-variant mb-xs">DL_SPEED</span>
+<span class="font-technical-md text-technical-md text-primary font-bold">12.4 MB/s</span>
+</div>
+<div class="bg-white p-md border-r-thick md:border-b-0 border-b-thick border-on-background">
+<span class="font-label-caps text-label-caps block text-on-surface-variant mb-xs">PEERS_CONNECTED</span>
+<span class="font-technical-md text-technical-md text-secondary font-bold">156 SEED / 42 LEECH</span>
+</div>
+<div class="bg-white p-md border-r-thick md:border-b-0 border-b-thick border-on-background">
+<span class="font-label-caps text-label-caps block text-on-surface-variant mb-xs">ETA_REMAINING</span>
+<span class="font-technical-md text-technical-md text-on-background font-bold">00:04:22</span>
+</div>
+<div class="bg-white p-md">
+<span class="font-label-caps text-label-caps block text-on-surface-variant mb-xs">PROTOCOL</span>
+<span class="font-technical-md text-technical-md text-tertiary font-bold">UTP_V2_ENCRYPTED</span>
+</div>
+</div>
+<!-- Additional Metadata Card -->
+<div class="bg-surface p-md border-thick border-on-background neo-shadow">
+<div class="flex items-center gap-xs mb-sm">
+<span class="material-symbols-outlined text-primary" data-icon="info">info</span>
+<h3 class="font-headline-lg-mobile text-headline-lg-mobile uppercase italic">STREAM_INFO</h3>
+</div>
+<p class="font-technical-sm text-technical-sm text-on-surface-variant leading-relaxed">
+                        SOURCE: HD_BLURAY_REMUX <br/>
+                        CODEC: HEVC_MAIN_10@L5.1@HIGH <br/>
+                        AUDIO: DTS-HD_MASTER_7.1_48KHZ <br/>
+                        CONTAINER: MATROSKA_VERSION_4
+                    </p>
+</div>
+</div>
+</main>
+</div>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 h-16 flex justify-around items-center md:hidden bg-background border-t-thick border-on-background">
+<a class="flex flex-col items-center justify-center text-on-background h-full px-4 font-label-caps text-label-caps hover:bg-surface-container-highest transition-all duration-75 active:translate-y-1" href="#">
+<span class="material-symbols-outlined" data-icon="add_box">add_box</span>
+<span>LOAD</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-background h-full px-4 font-label-caps text-label-caps hover:bg-surface-container-highest transition-all duration-75 active:translate-y-1" href="#">
+<span class="material-symbols-outlined" data-icon="folder_open">folder_open</span>
+<span>FILES</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-tertiary-container text-on-tertiary-container border-x-thick border-on-background h-full px-4 font-label-caps text-label-caps transition-all duration-75 active:translate-y-1" href="#">
+<span class="material-symbols-outlined" data-icon="play_circle">play_circle</span>
+<span>PLAYER</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-background h-full px-4 font-label-caps text-label-caps hover:bg-surface-container-highest transition-all duration-75 active:translate-y-1" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span>HISTORY</span>
+</a>
+</nav>
+<script>
+        // Micro-interaction for buttons to simulate physical press
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('mousedown', () => {
+                if (btn.classList.contains('neo-shadow')) {
+                    btn.classList.remove('neo-shadow');
+                    btn.classList.add('neo-shadow-active');
+                }
+            });
+            btn.addEventListener('mouseup', () => {
+                if (btn.classList.contains('neo-shadow-active')) {
+                    btn.classList.remove('neo-shadow-active');
+                    btn.classList.add('neo-shadow');
+                }
+            });
+            btn.addEventListener('mouseleave', () => {
+                if (btn.classList.contains('neo-shadow-active')) {
+                    btn.classList.remove('neo-shadow-active');
+                    btn.classList.add('neo-shadow');
+                }
+            });
+        });
+    </script>
+</body></html>

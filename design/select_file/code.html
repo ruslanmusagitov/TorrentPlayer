@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;800;900&family=Space+Mono:wght@400;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@100..900&family=Space+Mono:wght@100..900&display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .neo-shadow {
+            box-shadow: 4px 4px 0px 0px #000;
+        }
+        .neo-shadow-lg {
+            box-shadow: 8px 8px 0px 0px #000;
+        }
+        .active-press:active {
+            transform: translate(4px, 4px);
+            box-shadow: 0px 0px 0px 0px #000;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 12px;
+            border-left: 3px solid #1b1b1b;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #a04100;
+            border: 2px solid #1b1b1b;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed": "#e0e0ff",
+                        "inverse-surface": "#303030",
+                        "on-tertiary-container": "#293600",
+                        "on-tertiary-fixed-variant": "#3c4d00",
+                        "surface-container-low": "#f3f3f3",
+                        "on-background": "#1b1b1b",
+                        "on-tertiary-fixed": "#161e00",
+                        "on-surface-variant": "#5a4136",
+                        "error": "#ba1a1a",
+                        "on-secondary-fixed-variant": "#0000ef",
+                        "on-tertiary": "#ffffff",
+                        "surface-bright": "#f9f9f9",
+                        "surface-container": "#eeeeee",
+                        "surface": "#f9f9f9",
+                        "primary": "#a04100",
+                        "on-secondary": "#ffffff",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#f1f1f1",
+                        "on-primary": "#ffffff",
+                        "surface-variant": "#e2e2e2",
+                        "secondary": "#0001c0",
+                        "outline-variant": "#e2bfb0",
+                        "tertiary-fixed-dim": "#abd600",
+                        "surface-tint": "#a04100",
+                        "on-surface": "#1b1b1b",
+                        "tertiary-container": "#83a500",
+                        "tertiary-fixed": "#c3f400",
+                        "surface-dim": "#dadada",
+                        "error-container": "#ffdad6",
+                        "on-secondary-fixed": "#00006e",
+                        "surface-container-high": "#e8e8e8",
+                        "primary-fixed": "#ffdbcc",
+                        "outline": "#8e7164",
+                        "background": "#f9f9f9",
+                        "on-secondary-container": "#b6baff",
+                        "on-error": "#ffffff",
+                        "primary-container": "#ff6b00",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-container": "#572000",
+                        "on-primary-fixed": "#351000",
+                        "inverse-primary": "#ffb693",
+                        "tertiary": "#506600",
+                        "secondary-fixed-dim": "#bec2ff",
+                        "secondary-container": "#080cff",
+                        "surface-container-highest": "#e2e2e2",
+                        "primary-fixed-dim": "#ffb693",
+                        "on-primary-fixed-variant": "#7a3000"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "lg": "40px",
+                        "border-thick": "3px",
+                        "md": "24px",
+                        "sm": "16px",
+                        "shadow-offset": "4px",
+                        "xs": "8px",
+                        "base": "4px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Hanken Grotesk"],
+                        "technical-sm": ["Space Mono"],
+                        "body-md": ["Hanken Grotesk"],
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "display": ["Hanken Grotesk"],
+                        "technical-md": ["Space Mono"],
+                        "label-caps": ["Space Mono"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["32px", {"lineHeight": "1.2", "fontWeight": "800"}],
+                        "technical-sm": ["12px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                        "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "500"}],
+                        "headline-lg-mobile": ["24px", {"lineHeight": "1.2", "fontWeight": "800"}],
+                        "display": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "900"}],
+                        "technical-md": ["14px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                        "label-caps": ["11px", {"lineHeight": "1", "letterSpacing": "0.1em", "fontWeight": "700"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md overflow-x-hidden">
+<!-- Top Navigation Bar -->
+<header class="flex justify-between items-center w-full px-md h-20 bg-background z-50 fixed top-0 border-b-thick border-on-background shadow-shadow-offset shadow-on-background">
+<div class="flex items-center gap-xs">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="speed">speed</span>
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile font-black text-primary italic uppercase tracking-tighter">TORRENT_PLAYER</h1>
+</div>
+<button class="active:translate-x-shadow-offset active:translate-y-shadow-offset active:shadow-none transition-all duration-75">
+<span class="material-symbols-outlined text-on-background text-3xl" data-icon="settings">settings</span>
+</button>
+</header>
+<!-- Navigation Drawer (Desktop) -->
+<aside class="hidden md:flex flex-col h-screen fixed left-0 top-0 z-40 bg-surface w-64 border-r-thick border-on-background pt-24">
+<div class="px-md mb-lg">
+<h2 class="font-label-caps text-label-caps uppercase opacity-50 mb-sm">NAVIGATION</h2>
+</div>
+<nav class="flex flex-col">
+<a class="flex items-center gap-sm px-md py-sm text-on-background border-b border-on-background hover:bg-secondary-fixed active:scale-95 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="add_box">add_box</span>
+<span class="font-label-caps text-label-caps">LOAD</span>
+</a>
+<a class="flex items-center gap-sm px-md py-sm bg-primary text-on-primary border-thick border-on-background active:scale-95 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="folder_open">folder_open</span>
+<span class="font-label-caps text-label-caps">FILES</span>
+</a>
+<a class="flex items-center gap-sm px-md py-sm text-on-background border-b border-on-background hover:bg-secondary-fixed active:scale-95 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="play_circle">play_circle</span>
+<span class="font-label-caps text-label-caps">PLAYER</span>
+</a>
+<a class="flex items-center gap-sm px-md py-sm text-on-background border-b border-on-background hover:bg-secondary-fixed active:scale-95 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="font-label-caps text-label-caps">HISTORY</span>
+</a>
+</nav>
+</aside>
+<!-- Main Content Canvas -->
+<main class="pt-24 pb-32 md:pl-64 min-h-screen px-sm md:px-lg">
+<div class="max-w-5xl mx-auto">
+<!-- Torrent Header Card -->
+<div class="bg-secondary text-on-secondary border-thick border-on-background neo-shadow p-md mb-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-md">
+<div class="flex-1">
+<span class="font-label-caps text-label-caps text-secondary-fixed mb-xs block">ACTIVE_TORRENT</span>
+<h2 class="font-headline-lg text-headline-lg uppercase break-all">Interstellar.2014.2160p.HDR.x265.torrent</h2>
+</div>
+<div class="bg-on-secondary text-secondary p-xs border-thick border-on-background font-technical-md">
+                    SIZE: 48.2 GB
+                </div>
+</div>
+<!-- File List Section -->
+<div class="flex flex-col gap-sm">
+<div class="flex justify-between items-center mb-base">
+<h3 class="font-label-caps text-label-caps uppercase text-on-background">File Contents (12)</h3>
+<div class="flex gap-xs">
+<span class="font-technical-sm text-on-background opacity-70">Sort by:</span>
+<button class="font-technical-sm text-on-background underline">Name</button>
+</div>
+</div>
+<!-- File Items -->
+<div class="flex flex-col border-thick border-on-background bg-surface custom-scrollbar overflow-y-auto max-h-[530px]">
+<!-- Item 1: Highlighted Video -->
+<div class="group flex items-center justify-between p-sm border-b-thick border-on-background bg-tertiary-container hover:bg-tertiary transition-colors cursor-pointer" onclick="selectFile(this)">
+<div class="flex items-center gap-md flex-1">
+<span class="material-symbols-outlined text-on-tertiary-container" data-icon="movie" style="font-variation-settings: 'FILL' 1;">movie</span>
+<div class="flex flex-col">
+<span class="font-headline-lg-mobile text-headline-lg-mobile uppercase text-on-tertiary-container">Interstellar.2014.Main.mkv</span>
+<span class="font-technical-sm text-on-tertiary-container opacity-80">46.5 GB • Video/MKV</span>
+</div>
+</div>
+<input checked="" class="w-6 h-6 border-thick border-on-background text-primary focus:ring-primary" name="file-select" type="radio"/>
+</div>
+<!-- Item 2: Subtitles -->
+<div class="group flex items-center justify-between p-sm border-b border-on-background hover:bg-surface-container-highest transition-colors cursor-pointer" onclick="selectFile(this)">
+<div class="flex items-center gap-md flex-1">
+<span class="material-symbols-outlined text-on-background" data-icon="subtitles">subtitles</span>
+<div class="flex flex-col">
+<span class="font-body-md font-bold text-on-background uppercase">English_Subs.srt</span>
+<span class="font-technical-sm text-on-background opacity-60">156 KB • Text/SRT</span>
+</div>
+</div>
+<input class="w-6 h-6 border-thick border-on-background text-primary focus:ring-primary" name="file-select" type="radio"/>
+</div>
+<!-- Item 3: Metadata -->
+<div class="group flex items-center justify-between p-sm border-b border-on-background hover:bg-surface-container-highest transition-colors cursor-pointer" onclick="selectFile(this)">
+<div class="flex items-center gap-md flex-1">
+<span class="material-symbols-outlined text-on-background" data-icon="description">description</span>
+<div class="flex flex-col">
+<span class="font-body-md font-bold text-on-background uppercase">Torrent_Info.txt</span>
+<span class="font-technical-sm text-on-background opacity-60">2 KB • Text/Plain</span>
+</div>
+</div>
+<input class="w-6 h-6 border-thick border-on-background text-primary focus:ring-primary" name="file-select" type="radio"/>
+</div>
+<!-- Item 4: Video -->
+<div class="group flex items-center justify-between p-sm border-b-thick border-on-background bg-tertiary-container hover:bg-tertiary transition-colors cursor-pointer" onclick="selectFile(this)">
+<div class="flex items-center gap-md flex-1">
+<span class="material-symbols-outlined text-on-tertiary-container" data-icon="movie" style="font-variation-settings: 'FILL' 1;">movie</span>
+<div class="flex flex-col">
+<span class="font-headline-lg-mobile text-headline-lg-mobile uppercase text-on-tertiary-container">Interstellar.Behind.The.Scenes.mp4</span>
+<span class="font-technical-sm text-on-tertiary-container opacity-80">1.2 GB • Video/MP4</span>
+</div>
+</div>
+<input class="w-6 h-6 border-thick border-on-background text-primary focus:ring-primary" name="file-select" type="radio"/>
+</div>
+<!-- Item 5: Image -->
+<div class="group flex items-center justify-between p-sm border-b border-on-background hover:bg-surface-container-highest transition-colors cursor-pointer" onclick="selectFile(this)">
+<div class="flex items-center gap-md flex-1">
+<span class="material-symbols-outlined text-on-background" data-icon="image">image</span>
+<div class="flex flex-col">
+<span class="font-body-md font-bold text-on-background uppercase">Poster_HighRes.jpg</span>
+<span class="font-technical-sm text-on-background opacity-60">8.4 MB • Image/JPG</span>
+</div>
+</div>
+<input class="w-6 h-6 border-thick border-on-background text-primary focus:ring-primary" name="file-select" type="radio"/>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Action Bar / Navigation -->
+<footer class="fixed bottom-0 left-0 w-full z-50 bg-background border-t-thick border-on-background">
+<!-- Persistent Primary Action -->
+<div class="p-sm md:p-md flex justify-center bg-surface border-b border-on-background">
+<button class="w-full max-w-lg bg-primary text-on-primary font-headline-lg text-headline-lg uppercase py-md border-thick border-on-background neo-shadow active-press flex items-center justify-center gap-md">
+<span class="material-symbols-outlined text-4xl" data-icon="play_arrow" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+                STREAM NOW
+            </button>
+</div>
+<!-- Mobile Bottom Nav -->
+<nav class="h-16 flex justify-around items-center md:hidden">
+<a class="flex flex-col items-center justify-center text-on-background h-full px-4 hover:bg-surface-container-highest" href="#">
+<span class="material-symbols-outlined" data-icon="add_box">add_box</span>
+<span class="font-label-caps text-[8px]">LOAD</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-tertiary-container text-on-tertiary-container border-x-thick border-on-background h-full px-4" href="#">
+<span class="material-symbols-outlined" data-icon="folder_open">folder_open</span>
+<span class="font-label-caps text-[8px]">FILES</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-background h-full px-4 hover:bg-surface-container-highest" href="#">
+<span class="material-symbols-outlined" data-icon="play_circle">play_circle</span>
+<span class="font-label-caps text-[8px]">PLAYER</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-background h-full px-4 hover:bg-surface-container-highest" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="font-label-caps text-[8px]">HISTORY</span>
+</a>
+</nav>
+</footer>
+<script>
+        function selectFile(element) {
+            // Find radio button in this element
+            const radio = element.querySelector('input[type="radio"]');
+            radio.checked = true;
+            
+            // Logic for visual feedback could go here
+            // Currently using Tailwind's focus and group states
+        }
+    </script>
+</body></html>

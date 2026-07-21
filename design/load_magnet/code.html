@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>TORRENT_PLAYER - Neo-Brutalist Magnet Loader</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,400;0,500;0,700;0,800;0,900;1,800;1,900&family=Space+Mono:wght@400;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@100..900&family=Space+Mono:wght@100..900&display=swap" rel="stylesheet"/>
+<!-- Tailwind Config Verbatim -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-fixed": "#e0e0ff",
+                    "inverse-surface": "#303030",
+                    "on-tertiary-container": "#293600",
+                    "on-tertiary-fixed-variant": "#3c4d00",
+                    "surface-container-low": "#f3f3f3",
+                    "on-background": "#1b1b1b",
+                    "on-tertiary-fixed": "#161e00",
+                    "on-surface-variant": "#5a4136",
+                    "error": "#ba1a1a",
+                    "on-secondary-fixed-variant": "#0000ef",
+                    "on-tertiary": "#ffffff",
+                    "surface-bright": "#f9f9f9",
+                    "surface-container": "#eeeeee",
+                    "surface": "#f9f9f9",
+                    "primary": "#a04100",
+                    "on-secondary": "#ffffff",
+                    "on-error-container": "#93000a",
+                    "inverse-on-surface": "#f1f1f1",
+                    "on-primary": "#ffffff",
+                    "surface-variant": "#e2e2e2",
+                    "secondary": "#0001c0",
+                    "outline-variant": "#e2bfb0",
+                    "tertiary-fixed-dim": "#abd600",
+                    "surface-tint": "#a04100",
+                    "on-surface": "#1b1b1b",
+                    "tertiary-container": "#83a500",
+                    "tertiary-fixed": "#c3f400",
+                    "surface-dim": "#dadada",
+                    "error-container": "#ffdad6",
+                    "on-secondary-fixed": "#00006e",
+                    "surface-container-high": "#e8e8e8",
+                    "primary-fixed": "#ffdbcc",
+                    "outline": "#8e7164",
+                    "background": "#f9f9f9",
+                    "on-secondary-container": "#b6baff",
+                    "on-error": "#ffffff",
+                    "primary-container": "#ff6b00",
+                    "surface-container-lowest": "#ffffff",
+                    "on-primary-container": "#572000",
+                    "on-primary-fixed": "#351000",
+                    "inverse-primary": "#ffb693",
+                    "tertiary": "#506600",
+                    "secondary-fixed-dim": "#bec2ff",
+                    "secondary-container": "#080cff",
+                    "surface-container-highest": "#e2e2e2",
+                    "primary-fixed-dim": "#ffb693",
+                    "on-primary-fixed-variant": "#7a3000"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "lg": "40px",
+                    "border-thick": "3px",
+                    "md": "24px",
+                    "sm": "16px",
+                    "shadow-offset": "4px",
+                    "xs": "8px",
+                    "base": "4px"
+            },
+            "fontFamily": {
+                    "headline-lg": ["Hanken Grotesk"],
+                    "technical-sm": ["Space Mono"],
+                    "body-md": ["Hanken Grotesk"],
+                    "headline-lg-mobile": ["Hanken Grotesk"],
+                    "display": ["Hanken Grotesk"],
+                    "technical-md": ["Space Mono"],
+                    "label-caps": ["Space Mono"]
+            },
+            "fontSize": {
+                    "headline-lg": ["32px", {"lineHeight": "1.2", "fontWeight": "800"}],
+                    "technical-sm": ["12px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                    "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "500"}],
+                    "headline-lg-mobile": ["24px", {"lineHeight": "1.2", "fontWeight": "800"}],
+                    "display": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "900"}],
+                    "technical-md": ["14px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                    "label-caps": ["11px", {"lineHeight": "1", "letterSpacing": "0.1em", "fontWeight": "700"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        
+        /* Neo-Brutalism Shadow Utilities */
+        .shadow-brutal-sm { box-shadow: 4px 4px 0px 0px #1b1b1b; }
+        .shadow-brutal-lg { box-shadow: 8px 8px 0px 0px #1b1b1b; }
+        
+        .active-press:active {
+            transform: translate(4px, 4px);
+            box-shadow: 0px 0px 0px 0px #1b1b1b;
+        }
+
+        body {
+            background-color: #f9f9f9;
+            color: #1b1b1b;
+        }
+
+        /* Progress Bar Hazard Pattern */
+        .bg-hazard {
+            background: repeating-linear-gradient(
+                45deg,
+                #1b1b1b,
+                #1b1b1b 10px,
+                #e2e2e2 10px,
+                #e2e2e2 20px
+            );
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="min-h-screen flex flex-col font-body-md overflow-x-hidden">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-md h-20 bg-background z-50 fixed top-0 border-b-thick border-on-background shadow-brutal-sm">
+<div class="flex items-center gap-xs">
+<span class="material-symbols-outlined text-primary text-3xl">speed</span>
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile font-black text-primary italic uppercase tracking-tighter">TORRENT_PLAYER</h1>
+</div>
+<button class="w-12 h-12 flex items-center justify-center border-thick border-on-background bg-surface active-press shadow-brutal-sm transition-all">
+<span class="material-symbols-outlined text-on-background">settings</span>
+</button>
+</header>
+<!-- Sidebar (Desktop) -->
+<aside class="hidden md:flex flex-col h-screen fixed left-0 top-0 z-40 w-64 bg-surface border-r-thick border-on-background pt-24">
+<div class="px-md mb-lg">
+<p class="font-label-caps text-label-caps uppercase text-outline mb-xs">NAVIGATION</p>
+</div>
+<nav class="flex flex-col">
+<a class="flex items-center gap-sm px-md py-4 bg-primary text-on-primary border-thick border-on-background font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined">add_box</span>
+                LOAD
+            </a>
+<a class="flex items-center gap-sm px-md py-4 text-on-background border-b border-on-background font-label-caps text-label-caps hover:bg-secondary-fixed transition-colors" href="#">
+<span class="material-symbols-outlined">folder_open</span>
+                FILES
+            </a>
+<a class="flex items-center gap-sm px-md py-4 text-on-background border-b border-on-background font-label-caps text-label-caps hover:bg-secondary-fixed transition-colors" href="#">
+<span class="material-symbols-outlined">play_circle</span>
+                PLAYER
+            </a>
+<a class="flex items-center gap-sm px-md py-4 text-on-background border-b border-on-background font-label-caps text-label-caps hover:bg-secondary-fixed transition-colors" href="#">
+<span class="material-symbols-outlined">history</span>
+                HISTORY
+            </a>
+</nav>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-grow pt-24 pb-20 md:pb-8 px-md md:pl-72 max-w-7xl mx-auto w-full">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-lg h-full">
+<!-- Left Hero Section (Magnet Input) -->
+<section class="lg:col-span-7 flex flex-col justify-center">
+<div class="mb-lg">
+<span class="bg-tertiary-container text-on-tertiary-container font-technical-sm px-2 py-1 border border-on-background inline-block mb-4 uppercase">System Ready</span>
+<h2 class="font-display text-display uppercase leading-none mb-4">INJECT<br/>MAGNET</h2>
+<p class="font-body-md text-on-surface-variant max-w-md">Paste your peer-to-peer magnet link or hash below to initiate the streaming sequence.</p>
+</div>
+<div class="space-y-md">
+<div class="relative">
+<textarea class="w-full h-48 bg-surface-container-lowest border-thick border-on-background p-md font-technical-md focus:ring-0 focus:outline-none focus:border-primary transition-colors shadow-brutal-sm" placeholder="magnet:?xt=urn:btih:..."></textarea>
+<div class="absolute top-2 right-2 flex gap-xs">
+<button class="bg-surface border border-on-background px-2 py-1 font-technical-sm hover:bg-secondary-fixed transition-all">PASTE</button>
+<button class="bg-surface border border-on-background px-2 py-1 font-technical-sm hover:bg-secondary-fixed transition-all">CLEAR</button>
+</div>
+</div>
+<button class="w-full md:w-auto px-lg h-20 bg-primary-container text-on-primary-container font-headline-lg uppercase border-thick border-on-background shadow-brutal-lg active-press transition-all flex items-center justify-center gap-md">
+                        LOAD MAGNET
+                        <span class="material-symbols-outlined text-3xl">bolt</span>
+</button>
+</div>
+</section>
+<!-- Right Visual / Status Section -->
+<section class="lg:col-span-5 flex flex-col gap-md">
+<!-- Data Visualization Placeholder -->
+<div class="border-thick border-on-background bg-secondary shadow-brutal-sm aspect-video relative overflow-hidden group">
+<div class="absolute inset-0 opacity-40 mix-blend-overlay" data-alt="A macro close-up of digital data streams rendered in a brutalist aesthetic. The image features sharp, high-contrast lines and blocks of vibrant orange and electric blue on a dark charcoal background. The lighting is harsh and mechanical, suggesting high-speed peer-to-peer data transmission in a sterile, technical laboratory environment." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuARoSHVVqszRCyfe6AQaDzaN6HCVJpHhb-zCtKqgiuEYR09bMbjXF_nPDkLHE4mNKe6tfx6K8PcuZV4o0RMWhtmS0mQy2Zqk577HWo6QIoKMIfhrMM_Y-DEjUJIM_3jBqEWUd-wcGtVLQQZbKVPdiawCcdhlBhcNA5zmnru8nNn-jZeAYmrS3GfOmwjQwljEklnjdW-EEZjbxPssA6oOGGPPamWxeHpklS1zqVKX_32bTHVA0kgcEKd')"></div>
+<div class="absolute inset-0 flex flex-col items-center justify-center text-white p-lg">
+<span class="material-symbols-outlined text-6xl mb-xs">sensors</span>
+<p class="font-technical-sm uppercase tracking-widest">Awaiting Active Stream</p>
+</div>
+</div>
+<!-- Status Bento Grid -->
+<div class="grid grid-cols-2 gap-md">
+<div class="p-md border-thick border-on-background bg-surface shadow-brutal-sm">
+<p class="font-label-caps text-label-caps text-outline uppercase mb-2">Network Load</p>
+<p class="font-headline-lg text-headline-lg-mobile">88.2 <span class="text-sm font-normal">MB/S</span></p>
+</div>
+<div class="p-md border-thick border-on-background bg-surface shadow-brutal-sm">
+<p class="font-label-caps text-label-caps text-outline uppercase mb-2">Connected</p>
+<p class="font-headline-lg text-headline-lg-mobile text-tertiary">412 <span class="text-sm font-normal">PEERS</span></p>
+</div>
+</div>
+<!-- Active Card Example (Mockup of what happens after load) -->
+<div class="p-md border-thick border-on-background bg-surface-container shadow-brutal-sm opacity-50 select-none">
+<div class="flex justify-between items-start mb-md">
+<div>
+<h3 class="font-technical-md font-bold uppercase truncate max-w-[200px]">Latest_Project_File.mkv</h3>
+<p class="font-technical-sm text-outline">4.2 GB • H.264</p>
+</div>
+<span class="bg-on-background text-surface px-2 py-0.5 font-technical-sm">IDLE</span>
+</div>
+<div class="h-8 w-full border-thick border-on-background bg-white relative">
+<div class="h-full bg-hazard w-1/4"></div>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- FAB (Contextual for Home) -->
+<button class="fixed right-6 bottom-24 md:bottom-12 z-50 w-16 h-16 bg-tertiary text-on-tertiary border-thick border-on-background shadow-brutal-lg active-press flex items-center justify-center hover:bg-tertiary-container transition-all">
+<span class="material-symbols-outlined text-4xl">add</span>
+</button>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full h-16 bg-background z-50 flex border-t-thick border-on-background">
+<a class="flex-1 flex flex-col items-center justify-center bg-tertiary-container text-on-tertiary-container border-r-thick border-on-background h-full active-press" href="#">
+<span class="material-symbols-outlined">add_box</span>
+<span class="font-label-caps text-label-caps">LOAD</span>
+</a>
+<a class="flex-1 flex flex-col items-center justify-center text-on-background border-r-thick border-on-background h-full hover:bg-surface-container-highest active-press" href="#">
+<span class="material-symbols-outlined">folder_open</span>
+<span class="font-label-caps text-label-caps">FILES</span>
+</a>
+<a class="flex-1 flex flex-col items-center justify-center text-on-background border-r-thick border-on-background h-full hover:bg-surface-container-highest active-press" href="#">
+<span class="material-symbols-outlined">play_circle</span>
+<span class="font-label-caps text-label-caps">PLAYER</span>
+</a>
+<a class="flex-1 flex flex-col items-center justify-center text-on-background h-full hover:bg-surface-container-highest active-press" href="#">
+<span class="material-symbols-outlined">history</span>
+<span class="font-label-caps text-label-caps">HISTORY</span>
+</a>
+</nav>
+<script>
+        // Micro-interaction for magnet link input
+        const textarea = document.querySelector('textarea');
+        textarea.addEventListener('focus', () => {
+            textarea.parentElement.classList.add('shadow-brutal-lg');
+            textarea.parentElement.style.transform = 'translate(-4px, -4px)';
+        });
+        textarea.addEventListener('blur', () => {
+            textarea.parentElement.classList.remove('shadow-brutal-lg');
+            textarea.parentElement.style.transform = 'translate(0, 0)';
+        });
+
+        // Simple button active state toggle simulation
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('mousedown', () => {
+                btn.style.transform = 'translate(4px, 4px)';
+                btn.style.boxShadow = '0px 0px 0px 0px #1b1b1b';
+            });
+            btn.addEventListener('mouseup', () => {
+                btn.style.transform = '';
+                btn.style.boxShadow = '';
+            });
+            btn.addEventListener('mouseleave', () => {
+                btn.style.transform = '';
+                btn.style.boxShadow = '';
+            });
+        });
+    </script>
+</body></html>
