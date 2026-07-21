@@ -296,6 +296,29 @@ public actor TorrentHandle {
         )
     }
 
+    /// Fraction of pieces covering `fileIndex` that are complete (0…1).
+    public func fileProgress(fileIndex: Int) async -> Double {
+        guard let counts = await filePieceCounts(fileIndex: fileIndex), counts.total > 0 else {
+            return 0
+        }
+        return Double(counts.completed) / Double(counts.total)
+    }
+
+    /// Completed / total piece counts for the range covering `fileIndex`.
+    public func filePieceCounts(fileIndex: Int) async -> (completed: Int, total: Int)? {
+        guard let info, let pm = pieceManager else { return nil }
+        let storage = FileStorage(info: info)
+        guard let range = storage.pieceRange(forFileIndex: fileIndex), !range.isEmpty else {
+            return nil
+        }
+        let bitfield = await pm.getCompleted()
+        var completed = 0
+        for index in range where bitfield.get(index) {
+            completed += 1
+        }
+        return (completed, range.count)
+    }
+
     /// Download only pieces belonging to `fileIndex`, in start→end order when `sequential` is true.
     /// No-op if metadata is missing or the file index is invalid.
     public func prioritizeFile(_ fileIndex: Int, sequential: Bool = true) async {
