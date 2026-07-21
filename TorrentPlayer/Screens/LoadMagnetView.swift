@@ -63,14 +63,16 @@ struct LoadMagnetView: View {
                     }
 
                     BrutalPrimaryButton(
-                        title: isLoading ? "Loading…" : "Load Magnet",
+                        title: engine.isLoadingTorrent || isLoading ? "Loading…" : "Load Magnet",
                         systemImage: "bolt.fill",
                         largeShadow: true
                     ) {
-                        Task { await loadMagnet() }
+                        Task { @MainActor in
+                            await loadMagnet()
+                        }
                     }
-                    .disabled(isLoading || !engine.isOperational)
-                    .opacity(isLoading || !engine.isOperational ? 0.45 : 1)
+                    .disabled(isLoading || engine.isLoadingTorrent || !engine.isOperational)
+                    .opacity(isLoading || engine.isLoadingTorrent || !engine.isOperational ? 0.45 : 1)
                 }
 
                 awaitingStreamCard

@@ -127,6 +127,7 @@ final class TorrentEngine {
 
         phase = .adding
         var pendingInfoHash: InfoHash?
+        await Task.yield()
 
         do {
             let downloads = try Self.downloadsDirectory()
@@ -140,6 +141,7 @@ final class TorrentEngine {
             activeHandle = handle
 
             phase = .fetchingMetadata
+            await Task.yield()
             let info: TorrentInfo
             do {
                 info = try await handle.waitForMetadata(timeout: metadataTimeoutSeconds)
