@@ -84,6 +84,7 @@ final class TorrentEngine {
     private var streamServer: LocalHTTPStreamServer?
     private var playbackGeneration: UInt64 = 0
     private var byteGateAdvanceTask: Task<Void, Never>?
+    private var resumePersistTask: Task<Void, Never>?
     private var lastResumePersistAt: ContinuousClock.Instant?
     private var lastPersistedPiecesCompleted: Int = -1
     #endif
@@ -238,6 +239,7 @@ final class TorrentEngine {
             if previousInfoHash != nil {
                 await persistResumeIfNeeded(force: true)
             }
+            stopResumePersistLoop()
 
             let handle = try await session.addTorrent(params)
             activeHandle = handle
@@ -277,6 +279,7 @@ final class TorrentEngine {
             phase = .loaded(torrent)
             await applySequentialPriorityForSelection()
             await persistResumeIfNeeded(force: true)
+            startResumePersistLoop()
         } catch let error as TorrentEngineError {
             if case .metadataTimeout = error {
                 throw error
@@ -480,6 +483,24 @@ final class TorrentEngine {
         }
         #endif
     }
+
+    #if os(macOS)
+    private func startResumePersistLoop() {
+        stopResumePersistLoop()
+        resumePersistTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.resumePersistInterval)
+                guard !Task.isCancelled else { return }
+                await self?.persistResumeIfNeeded(force: true)
+            }
+        }
+    }
+
+    private func stopResumePersistLoop() {
+        resumePersistTask?.cancel()
+        resumePersistTask = nil
+    }
+    #endif
 
     #if os(macOS)
     private func waitForLeadingBytesPolling(

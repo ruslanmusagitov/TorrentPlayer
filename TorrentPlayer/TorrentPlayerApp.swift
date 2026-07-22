@@ -5,6 +5,9 @@
 
 import SwiftData
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 @main
 struct TorrentPlayerApp: App {
@@ -23,6 +26,11 @@ struct TorrentPlayerApp: App {
                     guard phase == .background || phase == .inactive else { return }
                     Task { await engine.persistResumeIfNeeded(force: true) }
                 }
+                #if os(macOS)
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    Task { await engine.persistResumeIfNeeded(force: true) }
+                }
+                #endif
         }
         .modelContainer(for: TorrentHistoryEntry.self)
     }
