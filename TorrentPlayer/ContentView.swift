@@ -52,31 +52,36 @@ struct ContentView: View {
     @ViewBuilder
     private var destinationView: some View {
         let playerActive = selection == .player
-        ZStack {
-            switch selection {
-            case .load:
-                LoadMagnetView {
-                    selection = .files
-                }
-            case .files:
-                SelectFileView {
-                    selection = .player
-                }
-            case .player:
-                Color.clear
-            case .history:
-                TorrentHistoryView {
-                    selection = .files
+        // Active tab sizes the container. Player is an overlay so a kept-alive
+        // StreamingPlayerView cannot inflate width for Load/Files/History.
+        tabContent
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                if playerMounted || playerActive {
+                    StreamingPlayerView(isActive: playerActive)
+                        .opacity(playerActive ? 1 : 0)
+                        .allowsHitTesting(playerActive)
+                        .accessibilityHidden(!playerActive)
                 }
             }
+    }
 
-            // Mount on first Player visit (`playerActive`); keep mounted afterwards (`playerMounted`).
-            if playerMounted || playerActive {
-                StreamingPlayerView(isActive: playerActive)
-                    .opacity(playerActive ? 1 : 0)
-                    .allowsHitTesting(playerActive)
-                    .accessibilityHidden(!playerActive)
-                    .zIndex(playerActive ? 1 : 0)
+    @ViewBuilder
+    private var tabContent: some View {
+        switch selection {
+        case .load:
+            LoadMagnetView {
+                selection = .files
+            }
+        case .files:
+            SelectFileView {
+                selection = .player
+            }
+        case .player:
+            Color.clear
+        case .history:
+            TorrentHistoryView {
+                selection = .files
             }
         }
     }
