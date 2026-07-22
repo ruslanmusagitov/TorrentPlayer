@@ -5,6 +5,7 @@
 //  Root shell: header + side/bottom nav + four Kinetic Torrent stubs.
 //
 
+import SwiftData
 import SwiftUI
 
 struct ContentView: View {
@@ -65,4 +66,5 @@ struct ContentView: View {
 #Preview {
     ContentView()
         .environment(TorrentEngine())
+        .modelContainer(for: TorrentHistoryEntry.self, inMemory: true)
 }

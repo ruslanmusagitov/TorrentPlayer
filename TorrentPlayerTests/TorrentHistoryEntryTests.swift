@@ -106,6 +106,24 @@ struct TorrentHistoryEntryTests {
         #expect(entries.isEmpty)
     }
 
+    @Test func displayHelpersMatchDesignConventions() {
+        let video = TorrentHistoryEntry(
+            infoHash: "abcdef1234567890abcdef1234567890abcdef12",
+            displayName: "Movie.mkv",
+            magnetURI: "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12"
+        )
+        #expect(video.shortID == "ABCDEF12")
+        #expect(video.badgeLabel == "VIDEO_MKV")
+
+        let other = TorrentHistoryEntry(
+            infoHash: "deadbeef",
+            displayName: "Archive",
+            magnetURI: "magnet:?xt=urn:btih:deadbeef"
+        )
+        #expect(other.shortID == "DEADBEEF")
+        #expect(other.badgeLabel == "TORRENT")
+    }
+
     private func makeContext() throws -> ModelContext {
         let schema = Schema([TorrentHistoryEntry.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
