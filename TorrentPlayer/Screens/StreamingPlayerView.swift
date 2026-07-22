@@ -83,8 +83,9 @@ struct StreamingPlayerView: View {
                     .italic()
                     .textCase(.uppercase)
                     .lineLimit(1)
-                    .padding(KTSpacing.sm)
+                    .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(KTSpacing.sm)
                     .background(KTColor.secondaryContainer)
                     .thickBorder()
                     .hardShadow()
@@ -97,6 +98,8 @@ struct StreamingPlayerView: View {
             .padding(KTSpacing.md)
             .frame(maxWidth: 960, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
+            // Prevent long labels / shadows from widening ScrollView content.
+            .fixedSize(horizontal: false, vertical: true)
         }
         .background(KTColor.background)
         #if os(macOS) || os(iOS)
@@ -308,11 +311,16 @@ struct StreamingPlayerView: View {
         VStack(alignment: .leading, spacing: KTSpacing.xs) {
             HStack {
                 Text(PlaybackFormatting.clock(seconds: duration > 0 ? currentTime : nil))
-                Spacer()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Spacer(minLength: KTSpacing.xs)
                 Text(PlaybackFormatting.clock(seconds: duration > 0 ? duration : nil))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
             }
             .font(KTTypography.technicalMD().weight(.bold))
             .textCase(.uppercase)
+            .frame(maxWidth: .infinity)
 
             GeometryReader { geo in
                 let downloadWidth = geo.size.width * downloadBarFraction
@@ -326,11 +334,12 @@ struct StreamingPlayerView: View {
                         .frame(width: max(0, playbackWidth))
                         .overlay(alignment: .trailing) {
                             if playbackBarFraction > 0 {
+                                // Keep playhead inside the bar horizontally; only lift vertically.
                                 Rectangle()
                                     .fill(KTColor.primary)
                                     .frame(width: 6, height: 40)
                                     .overlay(Rectangle().strokeBorder(KTColor.onBackground, lineWidth: 2))
-                                    .offset(x: 3, y: -4)
+                                    .offset(y: -4)
                             }
                         }
                 }
@@ -347,6 +356,7 @@ struct StreamingPlayerView: View {
                 )
             }
             .frame(height: 32)
+            .frame(maxWidth: .infinity)
         }
     }
 

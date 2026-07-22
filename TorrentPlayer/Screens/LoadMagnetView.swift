@@ -87,6 +87,7 @@ struct LoadMagnetView: View {
             .padding(KTSpacing.md)
             .frame(maxWidth: 900, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .background(KTColor.background)
     }

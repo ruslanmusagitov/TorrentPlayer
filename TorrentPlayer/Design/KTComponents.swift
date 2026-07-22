@@ -15,14 +15,16 @@ struct HardShadow: ViewModifier {
         if offset == 0 {
             content
         } else {
+            // Draw the block shadow outside the view bounds. Do not add
+            // trailing/bottom layout padding — that inflated ScrollView/ZStack
+            // ideal width and clipped leading content on narrow phones.
+            // Parent screens already use KTSpacing.md (≥ shadow) padding.
             content
                 .background(alignment: .topLeading) {
                     Rectangle()
                         .fill(color)
                         .offset(x: offset, y: offset)
                 }
-                .padding(.trailing, offset)
-                .padding(.bottom, offset)
         }
     }
 }
@@ -293,7 +295,10 @@ struct AppHeaderBar: View {
                 .fill(KTColor.onBackground)
                 .frame(height: KTSpacing.borderThick)
         }
+        // Header is full-bleed; reserve shadow strip so it is not clipped by the screen edge.
         .hardShadow()
+        .padding(.trailing, KTSpacing.shadowOffset)
+        .padding(.bottom, KTSpacing.shadowOffset)
         .zIndex(10)
     }
 }
