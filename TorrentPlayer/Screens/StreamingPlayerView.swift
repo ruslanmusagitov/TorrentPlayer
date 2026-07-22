@@ -12,6 +12,7 @@ import AVFoundation
 import SwiftVLC
 #if os(macOS)
 import AVKit
+import AppKit
 #else
 import UIKit
 #endif
@@ -26,6 +27,8 @@ struct StreamingPlayerView: View {
     @State private var currentTime: TimeInterval = 0
     @State private var duration: TimeInterval = 0
     @State private var bufferedFraction: Double = 0
+    @State private var volume: Float = 1.0
+    @State private var isFullscreen = false
     #if os(macOS) || os(iOS)
     @State private var player: AVPlayer?
     @State private var vlcPlayer: Player?
@@ -54,7 +57,7 @@ struct StreamingPlayerView: View {
     }
 
     private var stats: [(label: String, value: String, color: Color)] {
-        let speed = formatRate(engine.downloadRateBytes)
+        let speed = PlaybackFormatting.formatRate(engine.downloadRateBytes)
         let peers = engine.peersConnected > 0 ? "\(engine.peersConnected)" : "—"
         let eta = PlaybackFormatting.etaClock(
             progress: engine.downloadProgress,
@@ -102,6 +105,11 @@ struct StreamingPlayerView: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         .background(KTColor.background)
+        #if os(iOS)
+        .fullScreenCover(isPresented: $isFullscreen) {
+            fullscreenCover
+        }
+        #endif
         #if os(macOS) || os(iOS)
         .task(id: engine.selectedFileID) {
             guard isActive, engine.selectedFileID != nil else { return }
@@ -140,29 +148,8 @@ struct StreamingPlayerView: View {
             )
 
             #if os(macOS) || os(iOS)
-            if let player, !engine.usesEmbeddedVLC {
-                BareVideoView(player: player)
-            } else if let vlcPlayer, engine.usesEmbeddedVLC {
-                VideoView(vlcPlayer)
-                    .onChange(of: vlcPlayer.currentTime) { _, time in
-                        currentTime = Self.seconds(from: time)
-                    }
-                    .onChange(of: vlcPlayer.duration) { _, mediaDuration in
-                        if let mediaDuration {
-                            duration = Self.seconds(from: mediaDuration)
-                        }
-                    }
-                    .onChange(of: vlcPlayer.bufferFill) { _, fill in
-                        bufferedFraction = Double(fill)
-                    }
-                    .onChange(of: vlcPlayer.isPlaybackRequestedActive) { _, active in
-                        isPlaying = active
-                    }
-                    .onChange(of: vlcPlayer.state) { _, state in
-                        if case .stopped = state, vlcPlayer.didReachEnd {
-                            isPlaying = false
-                        }
-                    }
+            if showsInlineVideo {
+                videoSurface
             } else {
                 playbackPlaceholder
             }
@@ -213,22 +200,14 @@ struct StreamingPlayerView: View {
                         skip(by: 10)
                     }
                     Spacer()
-                    HStack(spacing: KTSpacing.xs) {
-                        Text("VOL")
-                            .font(KTTypography.technicalSM())
-                        ZStack(alignment: .leading) {
-                            Rectangle().fill(KTColor.surfaceContainer)
-                            Rectangle()
-                                .fill(KTColor.tertiary)
-                                .frame(width: 72)
-                        }
-                        .frame(width: 96, height: 14)
-                        .overlay(Rectangle().strokeBorder(KTColor.onBackground, lineWidth: 1))
+                    volumeControl
+                    controlButton(
+                        systemImage: fullscreenButtonImage,
+                        fill: .white,
+                        tint: KTColor.onBackground
+                    ) {
+                        toggleFullscreen()
                     }
-                    .padding(.horizontal, KTSpacing.sm)
-                    .padding(.vertical, KTSpacing.xs)
-                    .background(.white)
-                    .thickBorder()
                 }
                 .padding(KTSpacing.md)
             }
@@ -237,9 +216,41 @@ struct StreamingPlayerView: View {
         .thickBorder()
     }
 
+    private var volumeControl: some View {
+        HStack(spacing: KTSpacing.xs) {
+            Text("VOL")
+                .font(KTTypography.technicalSM())
+            GeometryReader { geo in
+                let fillWidth = max(0, min(geo.size.width, CGFloat(volume) * geo.size.width))
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(KTColor.surfaceContainer)
+                    Rectangle()
+                        .fill(KTColor.tertiary)
+                        .frame(width: fillWidth)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(Rectangle().strokeBorder(KTColor.onBackground, lineWidth: 1))
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let next = Float(value.location.x / max(geo.size.width, 1))
+                            volume = min(1, max(0, next))
+                            applyVolume()
+                        }
+                )
+            }
+            .frame(width: 96, height: 14)
+        }
+        .padding(.horizontal, KTSpacing.sm)
+        .padding(.vertical, KTSpacing.xs)
+        .background(.white)
+        .thickBorder()
+    }
+
     private var showsCenterPlayOverlay: Bool {
         #if os(macOS) || os(iOS)
-        hasActivePlayer && !isPlaying && engine.playbackPhase == .ready
+        hasActivePlayer && !isPlaying && engine.playbackPhase == .ready && !isFullscreen
         #else
         false
         #endif
@@ -253,6 +264,86 @@ struct StreamingPlayerView: View {
             player != nil
         }
     }
+
+    private var showsInlineVideo: Bool {
+        #if os(iOS)
+        hasActivePlayer && !isFullscreen
+        #else
+        hasActivePlayer
+        #endif
+    }
+
+    @ViewBuilder
+    private var videoSurface: some View {
+        if let player, !engine.usesEmbeddedVLC {
+            BareVideoView(player: player)
+        } else if let vlcPlayer, engine.usesEmbeddedVLC {
+            VideoView(vlcPlayer)
+                .onChange(of: vlcPlayer.currentTime) { _, time in
+                    currentTime = Self.seconds(from: time)
+                }
+                .onChange(of: vlcPlayer.duration) { _, mediaDuration in
+                    if let mediaDuration {
+                        duration = Self.seconds(from: mediaDuration)
+                    }
+                }
+                .onChange(of: vlcPlayer.bufferFill) { _, fill in
+                    bufferedFraction = Double(fill)
+                }
+                .onChange(of: vlcPlayer.isPlaybackRequestedActive) { _, active in
+                    isPlaying = active
+                }
+                .onChange(of: vlcPlayer.state) { _, state in
+                    if case .stopped = state, vlcPlayer.didReachEnd {
+                        isPlaying = false
+                    }
+                }
+        }
+    }
+
+    #if os(iOS)
+    private var fullscreenCover: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            videoSurface
+                .ignoresSafeArea()
+
+            VStack {
+                HStack {
+                    Spacer()
+                    controlButton(
+                        systemImage: "xmark",
+                        fill: .white,
+                        tint: KTColor.onBackground
+                    ) {
+                        isFullscreen = false
+                    }
+                }
+                .padding(KTSpacing.md)
+                Spacer()
+                HStack(spacing: KTSpacing.sm) {
+                    controlButton(
+                        systemImage: isPlaying ? "pause.fill" : "play.fill",
+                        fill: KTColor.primaryContainer,
+                        tint: KTColor.onPrimaryContainer
+                    ) {
+                        togglePlayPause()
+                    }
+                    controlButton(systemImage: "backward.fill", fill: .white, tint: KTColor.onBackground) {
+                        skip(by: -10)
+                    }
+                    controlButton(systemImage: "forward.fill", fill: .white, tint: KTColor.onBackground) {
+                        skip(by: 10)
+                    }
+                    Spacer()
+                    volumeControl
+                }
+                .padding(KTSpacing.md)
+            }
+        }
+        .statusBarHidden(true)
+    }
+    #endif
     #endif
 
     private var playbackPlaceholder: some View {
@@ -410,12 +501,29 @@ struct StreamingPlayerView: View {
         """
     }
 
-    private func formatRate(_ bytesPerSecond: Double) -> String {
-        guard bytesPerSecond > 0 else { return "—" }
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        formatter.allowedUnits = [.useKB, .useMB, .useGB]
-        return formatter.string(fromByteCount: Int64(bytesPerSecond)) + "/s"
+    private var fullscreenButtonImage: String {
+        #if os(iOS)
+        isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
+        #else
+        "arrow.up.left.and.arrow.down.right"
+        #endif
+    }
+
+    private func applyVolume() {
+        #if os(macOS) || os(iOS)
+        player?.volume = volume
+        if let vlcPlayer {
+            try? vlcPlayer.setAudioVolume(Volume(volume))
+        }
+        #endif
+    }
+
+    private func toggleFullscreen() {
+        #if os(macOS)
+        NSApp.keyWindow?.toggleFullScreen(nil)
+        #elseif os(iOS)
+        isFullscreen.toggle()
+        #endif
     }
 
     private func togglePlayPause() {
@@ -494,6 +602,7 @@ struct StreamingPlayerView: View {
                     next.isMuted = true
                 }
                 try next.play(url: url)
+                try? next.setAudioVolume(Volume(volume))
                 if isActive {
                     isPlaying = true
                 } else {
@@ -508,6 +617,7 @@ struct StreamingPlayerView: View {
         }
 
         let next = AVPlayer(url: url)
+        next.volume = volume
         player = next
         attachObservers(to: next)
         if isActive {

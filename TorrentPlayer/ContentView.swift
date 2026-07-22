@@ -2,7 +2,7 @@
 //  ContentView.swift
 //  TorrentPlayer
 //
-//  Root shell: header + side/bottom nav + four Kinetic Torrent stubs.
+//  Root shell: header + side/bottom nav + four Kinetic Torrent screens.
 //
 
 import SwiftData

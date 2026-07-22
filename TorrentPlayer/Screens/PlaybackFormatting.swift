@@ -40,4 +40,28 @@ enum PlaybackFormatting {
         let remaining = Double(totalBytes) * (1 - clamped)
         return clock(seconds: remaining / rateBytesPerSecond)
     }
+
+    /// Single-line rate for stats grids, e.g. `1.2 MB/s`, or `—` when idle.
+    static func formatRate(_ bytesPerSecond: Double) -> String {
+        let parts = rateParts(bytesPerSecond)
+        guard parts.value != "—" else { return "—" }
+        return "\(parts.value) \(parts.unit)/s"
+    }
+
+    /// Value + unit for Load Magnet cards (`88.2` + `MB/S`).
+    static func rateParts(_ bytesPerSecond: Double) -> (value: String, unit: String) {
+        guard bytesPerSecond > 0, bytesPerSecond.isFinite else {
+            return ("—", "MB/S")
+        }
+        if bytesPerSecond >= 1_000_000_000 {
+            return (String(format: "%.1f", bytesPerSecond / 1_000_000_000), "GB/S")
+        }
+        if bytesPerSecond >= 1_000_000 {
+            return (String(format: "%.1f", bytesPerSecond / 1_000_000), "MB/S")
+        }
+        if bytesPerSecond >= 1_000 {
+            return (String(format: "%.1f", bytesPerSecond / 1_000), "KB/S")
+        }
+        return (String(format: "%.0f", bytesPerSecond), "B/S")
+    }
 }
