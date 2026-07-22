@@ -44,21 +44,30 @@ struct ContentView: View {
 
     @ViewBuilder
     private var destinationView: some View {
-        switch selection {
-        case .load:
-            LoadMagnetView {
-                selection = .files
+        let playerActive = selection == .player
+        ZStack {
+            switch selection {
+            case .load:
+                LoadMagnetView {
+                    selection = .files
+                }
+            case .files:
+                SelectFileView {
+                    selection = .player
+                }
+            case .player:
+                Color.clear
+            case .history:
+                TorrentHistoryView {
+                    selection = .files
+                }
             }
-        case .files:
-            SelectFileView {
-                selection = .player
-            }
-        case .player:
-            StreamingPlayerView()
-        case .history:
-            TorrentHistoryView {
-                selection = .files
-            }
+
+            StreamingPlayerView(isActive: playerActive)
+                .opacity(playerActive ? 1 : 0)
+                .allowsHitTesting(playerActive)
+                .accessibilityHidden(!playerActive)
+                .zIndex(playerActive ? 1 : 0)
         }
     }
 }
