@@ -19,6 +19,48 @@ struct TorrentEngineTests {
         #expect(params.infoHash?.description == "abcdef1234567890abcdef1234567890abcdef12")
     }
 
+    @Test func resumeDataRoundTripOnDisk() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TorrentPlayerResume-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let infoHash = try #require(InfoHash(hex: "abcdef1234567890abcdef1234567890abcdef12"))
+        var pieces = Bitfield(count: 16)
+        pieces.set(0)
+        pieces.set(3)
+        pieces.set(15)
+        let original = ResumeData(
+            infoHash: infoHash,
+            completedPieces: pieces,
+            uploaded: 100,
+            downloaded: 2_048,
+            savePath: "/tmp/downloads"
+        )
+
+        try TorrentEngine.writeResumeData(original, infoHash: infoHash, directory: dir)
+
+        let loaded = try #require(TorrentEngine.loadResumeData(infoHash: infoHash, directory: dir))
+        #expect(loaded.infoHash == original.infoHash)
+        #expect(loaded.uploaded == 100)
+        #expect(loaded.downloaded == 2_048)
+        #expect(loaded.savePath == "/tmp/downloads")
+        #expect(loaded.completedPieces.get(0))
+        #expect(loaded.completedPieces.get(3))
+        #expect(loaded.completedPieces.get(15))
+        #expect(!loaded.completedPieces.get(1))
+    }
+
+    @Test func loadResumeDataReturnsNilWhenMissing() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TorrentPlayerResumeMissing-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let infoHash = try #require(InfoHash(hex: "abcdef1234567890abcdef1234567890abcdef12"))
+        #expect(TorrentEngine.loadResumeData(infoHash: infoHash, directory: dir) == nil)
+    }
+
     @Test func magnetParamsRejectInvalidURI() {
         #expect(throws: AddTorrentError.self) {
             _ = try AddTorrentParams.fromMagnet("not-a-magnet", savePath: "/tmp")

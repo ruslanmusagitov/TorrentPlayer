@@ -161,6 +161,30 @@ final class PieceManagerBlockTests: XCTestCase {
         let inProg = await pm.isInProgress(0)
         XCTAssertFalse(inProg)
     }
+
+    func testRestoreCompletedFromResumeBitfield() async {
+        let info = makeTorrentInfo(pieceLength: 16384, totalSize: 16384 * 4)
+        let pm = PieceManager(info: info)
+
+        var resume = Bitfield(count: 8) // wider than pieceCount — extra bits ignored
+        resume.set(0)
+        resume.set(2)
+        resume.set(7)
+
+        await pm.restoreCompleted(resume)
+
+        let has0 = await pm.hasPiece(0)
+        let has1 = await pm.hasPiece(1)
+        let has2 = await pm.hasPiece(2)
+        let has3 = await pm.hasPiece(3)
+        let progress = await pm.progress()
+
+        XCTAssertTrue(has0)
+        XCTAssertFalse(has1)
+        XCTAssertTrue(has2)
+        XCTAssertFalse(has3)
+        XCTAssertEqual(progress, 0.5, accuracy: 0.0001)
+    }
 }
 
 final class PiecePickerIntegrationTests: XCTestCase {
