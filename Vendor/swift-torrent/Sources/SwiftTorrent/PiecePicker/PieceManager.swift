@@ -84,6 +84,14 @@ public actor PieceManager {
         completed
     }
 
+    /// Restore completed pieces from resume data (bits beyond `pieceCount` are ignored).
+    public func restoreCompleted(_ bitfield: Bitfield) {
+        let limit = min(bitfield.count, pieceCount)
+        for index in 0..<limit where bitfield.get(index) {
+            completed.set(index)
+        }
+    }
+
     /// Check if a piece is complete.
     public func hasPiece(_ index: Int) -> Bool {
         completed.get(index)

@@ -8,6 +8,7 @@
 //  Task #6: sequential download of selected file.
 //  Task #7: local HTTP stream bridge → AVPlayer.
 //  Task #8: selected-file download progress for player UI.
+//  Task #14: persist piece resume across launches.
 //
 
 import Foundation
@@ -83,11 +84,15 @@ final class TorrentEngine {
     private var streamServer: LocalHTTPStreamServer?
     private var playbackGeneration: UInt64 = 0
     private var byteGateAdvanceTask: Task<Void, Never>?
+    private var resumePersistTask: Task<Void, Never>?
+    private var lastResumePersistAt: ContinuousClock.Instant?
+    private var lastPersistedPiecesCompleted: Int = -1
     #endif
 
     private let metadataTimeoutSeconds: Int
     private let streamingLeadBytes: Int64
     private let streamingLeadTimeoutSeconds: Int
+    private static let resumePersistInterval: Duration = .seconds(5)
 
     init(
         metadataTimeoutSeconds: Int = 10,
@@ -216,12 +221,25 @@ final class TorrentEngine {
 
         do {
             let downloads = try Self.downloadsDirectory()
-            let params = try AddTorrentParams.fromMagnet(trimmed, savePath: downloads.path)
+            var params = try AddTorrentParams.fromMagnet(trimmed, savePath: downloads.path)
             guard let infoHash = params.infoHash else {
                 throw AddTorrentError.noInfoHash
             }
             pendingInfoHash = infoHash
             TPLog.engine("addMagnet infoHash=\(infoHash)")
+
+            if let resume = Self.loadResumeData(infoHash: infoHash) {
+                params.resumeData = resume
+                TPLog.engine(
+                    "loaded resume pieces=\(resume.completedPieces.popcount) downloaded=\(resume.downloaded)"
+                )
+            }
+
+            // Persist active torrent before replacing the handle.
+            if previousInfoHash != nil {
+                await persistResumeIfNeeded(force: true)
+            }
+            stopResumePersistLoop()
 
             let handle = try await session.addTorrent(params)
             activeHandle = handle
@@ -256,8 +274,12 @@ final class TorrentEngine {
             activeInfoHash = infoHash
             lastMagnetURI = trimmed
             pendingInfoHash = nil
+            lastPersistedPiecesCompleted = -1
+            lastResumePersistAt = nil
             phase = .loaded(torrent)
             await applySequentialPriorityForSelection()
+            await persistResumeIfNeeded(force: true)
+            startResumePersistLoop()
         } catch let error as TorrentEngineError {
             if case .metadataTimeout = error {
                 throw error
@@ -431,8 +453,54 @@ final class TorrentEngine {
                 "status peers=\(status.numPeers) pieces=\(piecesCompleted)/\(piecesTotal) progress=\(String(format: "%.4f", downloadProgress)) rate=\(Int(status.downloadRate))B/s"
             )
         }
+        await persistResumeIfNeeded(force: false)
         #endif
     }
+
+    /// Save resume data for the active torrent (throttled unless `force`).
+    func persistResumeIfNeeded(force: Bool = false) async {
+        #if os(macOS)
+        guard let handle = activeHandle, let infoHash = activeInfoHash else { return }
+
+        let now = ContinuousClock.now
+        if !force {
+            if let last = lastResumePersistAt, now - last < Self.resumePersistInterval {
+                return
+            }
+            if piecesCompleted == lastPersistedPiecesCompleted {
+                return
+            }
+        }
+
+        guard let resume = await handle.generateResumeData() else { return }
+        do {
+            try Self.writeResumeData(resume, infoHash: infoHash)
+            lastResumePersistAt = now
+            lastPersistedPiecesCompleted = piecesCompleted
+            TPLog.engine("saved resume pieces=\(resume.completedPieces.popcount)")
+        } catch {
+            TPLog.error("resume save failed: \(error.localizedDescription)")
+        }
+        #endif
+    }
+
+    #if os(macOS)
+    private func startResumePersistLoop() {
+        stopResumePersistLoop()
+        resumePersistTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.resumePersistInterval)
+                guard !Task.isCancelled else { return }
+                await self?.persistResumeIfNeeded(force: true)
+            }
+        }
+    }
+
+    private func stopResumePersistLoop() {
+        resumePersistTask?.cancel()
+        resumePersistTask = nil
+    }
+    #endif
 
     #if os(macOS)
     private func waitForLeadingBytesPolling(
@@ -560,4 +628,46 @@ final class TorrentEngine {
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base
     }
+
+    #if os(macOS)
+    nonisolated static func resumeDirectory() throws -> URL {
+        let base = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ).appendingPathComponent("TorrentPlayer/Resume", isDirectory: true)
+
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base
+    }
+
+    nonisolated static func resumeFileURL(infoHash: InfoHash, in directory: URL) -> URL {
+        directory.appendingPathComponent("\(infoHash.description).dat", isDirectory: false)
+    }
+
+    nonisolated static func loadResumeData(infoHash: InfoHash, directory: URL? = nil) -> ResumeData? {
+        do {
+            let dir = try directory ?? resumeDirectory()
+            let url = resumeFileURL(infoHash: infoHash, in: dir)
+            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+            let data = try Data(contentsOf: url)
+            let resume = try ResumeData.decode(from: data)
+            guard resume.infoHash == infoHash else {
+                TPLog.engine("resume hash mismatch for \(infoHash), ignoring")
+                return nil
+            }
+            return resume
+        } catch {
+            TPLog.error("resume load failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    nonisolated static func writeResumeData(_ resume: ResumeData, infoHash: InfoHash, directory: URL? = nil) throws {
+        let dir = try directory ?? resumeDirectory()
+        let url = resumeFileURL(infoHash: infoHash, in: dir)
+        try resume.encode().write(to: url, options: .atomic)
+    }
+    #endif
 }

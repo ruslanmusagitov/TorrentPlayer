@@ -36,6 +36,7 @@ public actor TorrentHandle {
     private var metadataContinuations: [UInt64: CheckedContinuation<TorrentInfo, Error>] = [:]
     private var completionContinuations: [UInt64: CheckedContinuation<Void, Error>] = [:]
     private var nextWaitID: UInt64 = 0
+    private let pendingResumeData: ResumeData?
 
     public init(params: AddTorrentParams, settings: SessionSettings, group: EventLoopGroup) {
         let hash = params.infoHash!
@@ -45,6 +46,7 @@ public actor TorrentHandle {
         self.savePath = params.savePath ?? settings.savePath
         self.peerID = generatePeerID()
         self.group = group
+        self.pendingResumeData = params.resumeData
         self.peerManager = PeerManager(
             infoHash: hash.bytes, peerID: peerID, group: group,
             maxConnections: settings.maxConnectionsPerTorrent
@@ -79,6 +81,17 @@ public actor TorrentHandle {
         await peerManager.setOnPieceCompleted { [weak self] index in
             Task { await self?.notePieceDownloaded(index: index) }
         }
+
+        await applyPendingResumeData(to: pm)
+    }
+
+    private func applyPendingResumeData(to pm: PieceManager) async {
+        guard let resume = pendingResumeData, resume.infoHash == infoHash else { return }
+        await pm.restoreCompleted(resume.completedPieces)
+        totalUploaded = resume.uploaded
+        totalDownloaded = resume.downloaded
+        let restored = await pm.getCompleted().popcount
+        TorrentLog.session("applied resume data pieces=\(restored)/\(info?.pieceCount ?? 0)")
     }
 
     private func notePieceDownloaded(index: Int) async {
