@@ -3,6 +3,7 @@
 //  TorrentPlayer
 //
 
+import SwiftData
 import SwiftUI
 
 @main
@@ -18,5 +19,6 @@ struct TorrentPlayerApp: App {
                     await engine.bootstrap()
                 }
         }
+        .modelContainer(for: TorrentHistoryEntry.self)
     }
 }
