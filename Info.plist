@@ -7,5 +7,7 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>TorrentPlayer discovers nearby peers to stream video over BitTorrent.</string>
 </dict>
 </plist>

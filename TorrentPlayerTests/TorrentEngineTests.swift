@@ -6,12 +6,12 @@
 import Testing
 import Foundation
 @testable import TorrentPlayer
-#if os(macOS)
+#if os(macOS) || os(iOS)
 import SwiftTorrent
 #endif
 
 struct TorrentEngineTests {
-    #if os(macOS)
+    #if os(macOS) || os(iOS)
     @Test func magnetParamsAcceptValidURI() throws {
         let magnet = "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12&dn=Example"
         let params = try AddTorrentParams.fromMagnet(magnet, savePath: "/tmp")
@@ -366,8 +366,8 @@ struct TorrentEngineTests {
         #expect(engine.selectedFileID == 2)
     }
 
-    @Test @MainActor func bootstrapLeavesEngineReadyOnMacOS() async {
-        #if os(macOS)
+    @Test @MainActor func bootstrapLeavesEngineReadyOnSupportedPlatforms() async {
+        #if os(macOS) || os(iOS)
         let engine = TorrentEngine()
         await engine.bootstrap()
         #expect(engine.isOperational)
@@ -378,8 +378,8 @@ struct TorrentEngineTests {
         #endif
     }
 
-    @Test @MainActor func addMagnetTimesOutWithoutPeersOnMacOS() async {
-        #if os(macOS)
+    @Test @MainActor func addMagnetTimesOutWithoutPeersOnSupportedPlatforms() async {
+        #if os(macOS) || os(iOS)
         let engine = TorrentEngine(metadataTimeoutSeconds: 1)
         await engine.bootstrap()
 
@@ -399,7 +399,7 @@ struct TorrentEngineTests {
     }
 
     @Test @MainActor func addMagnetTimeoutSurfacesErrorWhileKeepingPreviousTorrent() async {
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         let engine = TorrentEngine(metadataTimeoutSeconds: 1)
         await engine.bootstrap()
 
@@ -428,8 +428,8 @@ struct TorrentEngineTests {
         #endif
     }
 
-    @Test @MainActor func addMagnetRejectsInvalidURIOnMacOS() async {
-        #if os(macOS)
+    @Test @MainActor func addMagnetRejectsInvalidURIOnSupportedPlatforms() async {
+        #if os(macOS) || os(iOS)
         let engine = TorrentEngine()
         await engine.bootstrap()
 

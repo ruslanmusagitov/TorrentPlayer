@@ -6,7 +6,7 @@
 //
 
 import Foundation
-#if os(macOS)
+#if os(macOS) || os(iOS)
 import SwiftTorrent
 #endif
 
@@ -119,7 +119,7 @@ enum TorrentFileFormatting {
     }
 }
 
-#if os(macOS)
+#if os(macOS) || os(iOS)
 extension ActiveTorrent {
     static func from(info: TorrentInfo, infoHash: String) -> ActiveTorrent {
         TorrentFileFormatting.makeActiveTorrent(

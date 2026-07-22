@@ -2,7 +2,7 @@
 //  TorrentEngine.swift
 //  TorrentPlayer
 //
-//  Task #3: torrent session on macOS (SwiftTorrent SPM).
+//  Task #3: torrent session; Task #11: iOS (SwiftTorrent SPM).
 //  Task #4: metadata fetch and file list.
 //  Task #5: video file selection.
 //  Task #6: sequential download of selected file.
@@ -13,8 +13,7 @@
 
 import Foundation
 import Observation
-#if os(macOS)
-import AppKit
+#if os(macOS) || os(iOS)
 import SwiftTorrent
 #endif
 
@@ -78,7 +77,7 @@ final class TorrentEngine {
         }
     }
 
-    #if os(macOS)
+    #if os(macOS) || os(iOS)
     private var session: Session?
     private var activeHandle: TorrentHandle?
     private var activeInfoHash: InfoHash?
@@ -132,7 +131,7 @@ final class TorrentEngine {
         case .ready:
             "System Ready"
         case .unsupportedPlatform:
-            "Torrent Engine: macOS Only (iOS Soon)"
+            "Torrent Engine Unavailable"
         case .adding:
             "Accepting Magnet…"
         case .fetchingMetadata:
@@ -152,7 +151,7 @@ final class TorrentEngine {
             stopPlayback()
         }
         selectedFileID = id
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         Task { await applySequentialPriorityForSelection() }
         #endif
     }
@@ -168,7 +167,7 @@ final class TorrentEngine {
         guard case .idle = phase else { return }
         phase = .starting
 
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         do {
             let downloads = try Self.downloadsDirectory()
             let settings = SessionSettings(
@@ -203,7 +202,7 @@ final class TorrentEngine {
             throw TorrentEngineError.emptyMagnet
         }
 
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         guard let session else {
             phase = .error(TorrentEngineError.sessionNotReady.localizedDescription)
             throw TorrentEngineError.sessionNotReady
@@ -317,7 +316,7 @@ final class TorrentEngine {
 
     /// Waits for leading sequential bytes, then starts a loopback HTTP server for AVPlayer.
     func preparePlayback() async {
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         stopPlayback()
         let generation = playbackGeneration
 
@@ -409,7 +408,7 @@ final class TorrentEngine {
     }
 
     func stopPlayback() {
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         playbackGeneration += 1
         byteGateAdvanceTask?.cancel()
         byteGateAdvanceTask = nil
@@ -422,7 +421,7 @@ final class TorrentEngine {
     }
 
     func refreshDownloadStatus() async {
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         guard let handle = activeHandle else {
             downloadProgress = 0
             downloadRateBytes = 0
@@ -456,7 +455,7 @@ final class TorrentEngine {
 
     /// Save resume data for the active torrent (throttled unless `force`).
     func persistResumeIfNeeded(force: Bool = false) async {
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         guard let handle = activeHandle, let infoHash = activeInfoHash else { return }
 
         let now = ContinuousClock.now
@@ -481,7 +480,7 @@ final class TorrentEngine {
         #endif
     }
 
-    #if os(macOS)
+    #if os(macOS) || os(iOS)
     private func startResumePersistLoop() {
         stopResumePersistLoop()
         resumePersistTask = Task { [weak self] in
@@ -499,7 +498,7 @@ final class TorrentEngine {
     }
     #endif
 
-    #if os(macOS)
+    #if os(macOS) || os(iOS)
     private func waitForLeadingBytesPolling(
         handle: TorrentHandle,
         fileIndex: Int,
@@ -597,7 +596,7 @@ final class TorrentEngine {
         return base
     }
 
-    #if os(macOS)
+    #if os(macOS) || os(iOS)
     nonisolated static func resumeDirectory() throws -> URL {
         let base = try FileManager.default.url(
             for: .applicationSupportDirectory,

@@ -95,3 +95,4 @@ UI-задачи сверяют визуал и структуру с этими 
 | 1c. Уточнение плана: resume | Добавлены результат цели 7 и задача 14 ([#21](https://github.com/ruslanmusagitov/TorrentPlayer/issues/21)); порядок 10 → 14 → 11 | Докачка переживает перезапуск | принять | Запрос пользователя |
 | 14. Resume: прогресс кусков | SwiftTorrent apply `resumeData` + `TorrentEngine` save/load в Application Support/Resume; unit-тесты | Результат цели 7 на macOS | принять (после merge PR) | Issue #21 |
 | 15. Встроить SwiftVLC для MKV/AVI | SPM SwiftVLC; in-process VideoView по local HTTP; external VLC.app убран; play/pause из UI | Результат 3/4 для non-AVPlayer на macOS | принять (после merge PR) | Issue #22 |
+| 11. E2E torrent+player на iOS | SwiftTorrent + StreamingPlayer на iOS; BareVideoView (AVPlayerLayer); сборка iPhone Simulator | Результаты 1–4, 6, 7 на iPhone (Simulator) | принять (после merge PR) | Issue #11 |

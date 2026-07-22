@@ -3,14 +3,18 @@
 //  TorrentPlayer
 //
 //  design/streaming_player/ — Task #7 stream bridge; Task #8 play/pause + dual progress;
-//  Task #15 / #22 embedded SwiftVLC for non-AVPlayer containers.
+//  Task #15 / #22 embedded SwiftVLC; Task #11 iOS playback.
 //
 
 import SwiftUI
-#if os(macOS)
+#if os(macOS) || os(iOS)
 import AVFoundation
-import AVKit
 import SwiftVLC
+#if os(macOS)
+import AVKit
+#else
+import UIKit
+#endif
 #endif
 
 struct StreamingPlayerView: View {
@@ -19,7 +23,7 @@ struct StreamingPlayerView: View {
     @State private var currentTime: TimeInterval = 0
     @State private var duration: TimeInterval = 0
     @State private var bufferedFraction: Double = 0
-    #if os(macOS)
+    #if os(macOS) || os(iOS)
     @State private var player: AVPlayer?
     @State private var vlcPlayer: Player?
     @State private var timeObserver: Any?
@@ -92,7 +96,7 @@ struct StreamingPlayerView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(KTColor.background)
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         .task(id: engine.selectedFileID) {
             await engine.preparePlayback()
         }
@@ -121,7 +125,7 @@ struct StreamingPlayerView: View {
                 endPoint: .bottomTrailing
             )
 
-            #if os(macOS)
+            #if os(macOS) || os(iOS)
             if let player, !engine.usesEmbeddedVLC {
                 BareVideoView(player: player)
             } else if let vlcPlayer, engine.usesEmbeddedVLC {
@@ -220,14 +224,14 @@ struct StreamingPlayerView: View {
     }
 
     private var showsCenterPlayOverlay: Bool {
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         hasActivePlayer && !isPlaying && engine.playbackPhase == .ready
         #else
         false
         #endif
     }
 
-    #if os(macOS)
+    #if os(macOS) || os(iOS)
     private var hasActivePlayer: Bool {
         if engine.usesEmbeddedVLC {
             vlcPlayer != nil
@@ -394,7 +398,7 @@ struct StreamingPlayerView: View {
     }
 
     private func togglePlayPause() {
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         if let vlcPlayer, engine.usesEmbeddedVLC {
             vlcPlayer.togglePlayPause()
             isPlaying = vlcPlayer.isPlaybackRequestedActive
@@ -422,7 +426,7 @@ struct StreamingPlayerView: View {
     }
 
     private func seek(to seconds: TimeInterval) {
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         let target = min(duration, max(0, seconds))
         if let vlcPlayer, engine.usesEmbeddedVLC {
             guard duration > 0 else { return }
@@ -438,7 +442,7 @@ struct StreamingPlayerView: View {
         #endif
     }
 
-    #if os(macOS)
+    #if os(macOS) || os(iOS)
     private func rebuildPlayer(with url: URL?) {
         tearDownPlayer()
         guard let url else { return }
@@ -581,6 +585,35 @@ private struct BareVideoView: NSViewRepresentable {
     func updateNSView(_ nsView: AVPlayerView, context: Context) {
         if nsView.player !== player {
             nsView.player = player
+        }
+    }
+}
+#elseif os(iOS)
+/// AVPlayer surface without system chrome so Kinetic controls stay visible.
+private struct BareVideoView: UIViewRepresentable {
+    let player: AVPlayer
+
+    func makeUIView(context: Context) -> PlayerLayerView {
+        let view = PlayerLayerView()
+        view.player = player
+        return view
+    }
+
+    func updateUIView(_ uiView: PlayerLayerView, context: Context) {
+        uiView.player = player
+    }
+}
+
+private final class PlayerLayerView: UIView {
+    override class var layerClass: AnyClass { AVPlayerLayer.self }
+
+    private var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+
+    var player: AVPlayer? {
+        get { playerLayer.player }
+        set {
+            playerLayer.player = newValue
+            playerLayer.videoGravity = .resizeAspect
         }
     }
 }
