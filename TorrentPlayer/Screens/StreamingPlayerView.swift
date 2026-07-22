@@ -446,6 +446,7 @@ struct StreamingPlayerView: View {
     private func rebuildPlayer(with url: URL?) {
         tearDownPlayer()
         guard let url else { return }
+        activatePlaybackAudioSessionIfNeeded()
 
         if engine.usesEmbeddedVLC {
             let next = Player()
@@ -465,6 +466,18 @@ struct StreamingPlayerView: View {
         attachObservers(to: next)
         next.play()
         isPlaying = true
+    }
+
+    private func activatePlaybackAudioSessionIfNeeded() {
+        #if os(iOS)
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, mode: .moviePlayback)
+            try session.setActive(true)
+        } catch {
+            TPLog.error("AVAudioSession activate failed: \(error.localizedDescription)")
+        }
+        #endif
     }
 
     private func attachObservers(to player: AVPlayer) {
