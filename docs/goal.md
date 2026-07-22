@@ -15,6 +15,7 @@
 - Multiplatform SwiftUI на базе существующего `TorrentPlayer.xcodeproj`
 - Magnet → метаданные → выбор видеофайла → воспроизведение во время загрузки
 - История ранее добавленных торрентов
+- Resume докачки (прогресс кусков переживает перезапуск)
 - Установка на личные устройства (локально и/или TestFlight)
 - UI по neo-brutalist макетам из `design/` (Kinetic Torrent)
 
@@ -54,6 +55,7 @@ UI-задачи сверяют визуал и структуру с этими 
 4. Есть play/pause и отображение прогресса буфера/загрузки.
 5. Можно просмотреть историю ранее добавленных торрентов (magnet / название).
 6. Приложение устанавливается и запускается на личных устройствах (локальная сборка и/или TestFlight), без App Store.
+7. После перезапуска докачка выбранного файла продолжается с уже скачанных кусков (resume), без полной перекачки.
 
 ## План
 
@@ -71,11 +73,12 @@ UI-задачи сверяют визуал и структуру с этими 
 | 8. Play/pause и индикатор прогресса загрузки/буфера | [#8](https://github.com/ruslanmusagitov/TorrentPlayer/issues/8) | 4 | `design/streaming_player/` | контролы и прогресс работают и соответствуют макету | < 0.5 д |
 | 9. Модель истории в SwiftData + запись при добавлении magnet | [#9](https://github.com/ruslanmusagitov/TorrentPlayer/issues/9) | 5 | — | записи сохраняются между запусками | < 0.5 д |
 | 10. Экран истории: список и повторное открытие | [#10](https://github.com/ruslanmusagitov/TorrentPlayer/issues/10) | 5 | `design/torrent_history/` | список истории как в макете; из истории снова открывается торрент | < 0.5 д |
-| 11. Довести torrent+player до рабочего e2e на iOS | [#11](https://github.com/ruslanmusagitov/TorrentPlayer/issues/11) | 1–4, 6 | — | сценарий magnet→play на iPhone | < 1 д |
-| 12. Проверить тот же сценарий на iPadOS | [#12](https://github.com/ruslanmusagitov/TorrentPlayer/issues/12) | 1–4, 6 | — | сценарий magnet→play на iPad | < 0.5 д |
-| 13. Финальная проверка macOS + чеклист локальной установки/TestFlight | [#13](https://github.com/ruslanmusagitov/TorrentPlayer/issues/13) | 6 | — | все 6 результатов отмечены да/нет | < 0.5 д |
+| 14. Resume: сохранять прогресс кусков между запусками | [#21](https://github.com/ruslanmusagitov/TorrentPlayer/issues/21) | 7 | — | повторный старт / открытие из истории докачивает с места остановки | < 1 д |
+| 11. Довести torrent+player до рабочего e2e на iOS | [#11](https://github.com/ruslanmusagitov/TorrentPlayer/issues/11) | 1–4, 6, 7 | — | сценарий magnet→play на iPhone | < 1 д |
+| 12. Проверить тот же сценарий на iPadOS | [#12](https://github.com/ruslanmusagitov/TorrentPlayer/issues/12) | 1–4, 6, 7 | — | сценарий magnet→play на iPad | < 0.5 д |
+| 13. Финальная проверка macOS + чеклист локальной установки/TestFlight | [#13](https://github.com/ruslanmusagitov/TorrentPlayer/issues/13) | 6 | — | все 7 результатов отмечены да/нет | < 0.5 д |
 
-Порядок: 1 → 2 → … → 13. После каждой задачи — строка в «Обратная связь».
+Порядок: 1 → … → 10 → 14 → 11 → 12 → 13. После каждой задачи — строка в «Обратная связь».
 
 ## Обратная связь
 
@@ -89,3 +92,4 @@ UI-задачи сверяют визуал и структуру с этими 
 | 5. Фильтр видео + UI выбора файла | videoFiles фильтр; selectedFile на engine; Select File выбирает одно видео; Stream Now только с видео; ошибка 2-го magnet показывается | Результат 2 | принять | Merge PR #17 |
 | 6. Sequential download выбранного файла | PiecePicker sequential + file piece range; TorrentEngine prioritize после metadata и selectFile; vendor unit-тесты | Движение к результату 3 (порядок кусков) | принять | Merge PR #18 |
 | 7. Мост стриминга в AVPlayer | Local HTTP + StreamingByteGate; AVPlayer для mp4/mov; MKV → VLC; playback до 100% на macOS (файл растёт, открывается частично) | Результат 3 на macOS | принять | Merge PR #19 |
+| 1c. Уточнение плана: resume | Добавлены результат цели 7 и задача 14 ([#21](https://github.com/ruslanmusagitov/TorrentPlayer/issues/21)); порядок 10 → 14 → 11 | Докачка переживает перезапуск | принять | Запрос пользователя |
