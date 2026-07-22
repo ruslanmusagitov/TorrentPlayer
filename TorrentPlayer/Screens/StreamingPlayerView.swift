@@ -411,6 +411,9 @@ struct StreamingPlayerView: View {
     private func togglePlayPause() {
         #if os(macOS) || os(iOS)
         if let vlcPlayer, engine.usesEmbeddedVLC {
+            if vlcPlayer.isMuted {
+                vlcPlayer.isMuted = false
+            }
             vlcPlayer.togglePlayPause()
             isPlaying = vlcPlayer.isPlaybackRequestedActive
             return
@@ -476,6 +479,10 @@ struct StreamingPlayerView: View {
             let next = Player()
             vlcPlayer = next
             do {
+                // Mute before play so inactive rebuild (play→pause) cannot emit a short blip.
+                if !isActive {
+                    next.isMuted = true
+                }
                 try next.play(url: url)
                 if isActive {
                     isPlaying = true
