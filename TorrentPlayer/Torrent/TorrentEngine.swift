@@ -7,6 +7,7 @@
 //  Task #5: video file selection.
 //  Task #6: sequential download of selected file.
 //  Task #7: local HTTP stream bridge → AVPlayer.
+//  Task #8: selected-file download progress for player UI.
 //
 
 import Foundation
@@ -412,14 +413,22 @@ final class TorrentEngine {
             return
         }
         let status = await handle.status()
-        downloadProgress = status.progress
         downloadRateBytes = status.downloadRate
         peersConnected = status.numPeers
-        piecesCompleted = status.piecesCompleted
-        piecesTotal = status.piecesTotal
+        if let selectedFileID, let counts = await handle.filePieceCounts(fileIndex: selectedFileID) {
+            downloadProgress = counts.total > 0
+                ? Double(counts.completed) / Double(counts.total)
+                : 0
+            piecesCompleted = counts.completed
+            piecesTotal = counts.total
+        } else {
+            downloadProgress = status.progress
+            piecesCompleted = status.piecesCompleted
+            piecesTotal = status.piecesTotal
+        }
         if playbackPhase == .buffering {
             TPLog.playback(
-                "status peers=\(status.numPeers) pieces=\(status.piecesCompleted)/\(status.piecesTotal) progress=\(String(format: "%.4f", status.progress)) rate=\(Int(status.downloadRate))B/s"
+                "status peers=\(status.numPeers) pieces=\(piecesCompleted)/\(piecesTotal) progress=\(String(format: "%.4f", downloadProgress)) rate=\(Int(status.downloadRate))B/s"
             )
         }
         #endif
