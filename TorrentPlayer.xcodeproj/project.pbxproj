@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		3B59C2A1300F66DD00231BBF /* SwiftTorrent in Frameworks */ = {isa = PBXBuildFile; productRef = 3B59C241300F33FC00231BBF /* SwiftTorrent */; };
+		741B5FE9749E479B963B0410 /* SwiftVLC in Frameworks */ = {isa = PBXBuildFile; productRef = D85442A3FEA842B68867A0E1 /* SwiftVLC */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -57,6 +58,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				3B59C2A1300F66DD00231BBF /* SwiftTorrent in Frameworks */,
+				741B5FE9749E479B963B0410 /* SwiftVLC in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -118,6 +120,7 @@
 			name = TorrentPlayer;
 			packageProductDependencies = (
 				3B59C241300F33FC00231BBF /* SwiftTorrent */,
+				D85442A3FEA842B68867A0E1 /* SwiftVLC */,
 			);
 			productName = TorrentPlayer;
 			productReference = 3B59C210300F33FA00231BBF /* TorrentPlayer.app */;
@@ -203,6 +206,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				3B59C240300F33FC00231BBF /* XCLocalSwiftPackageReference "Vendor/swift-torrent" */,
+				9C95000D32104500A1DE91CD /* XCRemoteSwiftPackageReference "SwiftVLC" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3B59C211300F33FA00231BBF /* Products */;
@@ -636,11 +640,27 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		9C95000D32104500A1DE91CD /* XCRemoteSwiftPackageReference "SwiftVLC" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/harflabs/SwiftVLC.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		3B59C241300F33FC00231BBF /* SwiftTorrent */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 3B59C240300F33FC00231BBF /* XCLocalSwiftPackageReference "Vendor/swift-torrent" */;
 			productName = SwiftTorrent;
+		};
+		D85442A3FEA842B68867A0E1 /* SwiftVLC */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9C95000D32104500A1DE91CD /* XCRemoteSwiftPackageReference "SwiftVLC" */;
+			productName = SwiftVLC;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

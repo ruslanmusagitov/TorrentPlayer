@@ -297,6 +297,15 @@ struct TorrentEngineTests {
         }
     }
 
+    @Test @MainActor func isAVPlayerCompatibleRoutesContainers() {
+        #expect(TorrentEngine.isAVPlayerCompatible(path: "a/b/clip.mp4"))
+        #expect(TorrentEngine.isAVPlayerCompatible(path: "clip.M4V"))
+        #expect(TorrentEngine.isAVPlayerCompatible(path: "clip.mov"))
+        #expect(!TorrentEngine.isAVPlayerCompatible(path: "film.mkv"))
+        #expect(!TorrentEngine.isAVPlayerCompatible(path: "film.avi"))
+        #expect(!TorrentEngine.isAVPlayerCompatible(path: "film.webm"))
+    }
+
     @Test func videoFilesFiltersNonVideoEntries() {
         let torrent = TorrentFileFormatting.makeActiveTorrent(
             displayName: "Mixed",

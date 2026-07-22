@@ -94,3 +94,4 @@ UI-задачи сверяют визуал и структуру с этими 
 | 7. Мост стриминга в AVPlayer | Local HTTP + StreamingByteGate; AVPlayer для mp4/mov; MKV → VLC; playback до 100% на macOS (файл растёт, открывается частично) | Результат 3 на macOS | принять | Merge PR #19 |
 | 1c. Уточнение плана: resume | Добавлены результат цели 7 и задача 14 ([#21](https://github.com/ruslanmusagitov/TorrentPlayer/issues/21)); порядок 10 → 14 → 11 | Докачка переживает перезапуск | принять | Запрос пользователя |
 | 14. Resume: прогресс кусков | SwiftTorrent apply `resumeData` + `TorrentEngine` save/load в Application Support/Resume; unit-тесты | Результат цели 7 на macOS | принять (после merge PR) | Issue #21 |
+| 15. Встроить SwiftVLC для MKV/AVI | SPM SwiftVLC; in-process VideoView по local HTTP; external VLC.app убран; play/pause из UI | Результат 3/4 для non-AVPlayer на macOS | принять (после merge PR) | Issue #22 |
