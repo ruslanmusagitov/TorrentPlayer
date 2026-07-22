@@ -101,7 +101,9 @@ struct StreamingPlayerView: View {
         .background(KTColor.background)
         #if os(macOS) || os(iOS)
         .task(id: engine.selectedFileID) {
-            guard engine.selectedFileID != nil else { return }
+            guard isActive, engine.selectedFileID != nil else { return }
+            // Keep a live stream across tab switches; only prepare when none exists yet.
+            if engine.playbackURL != nil { return }
             await engine.preparePlayback()
         }
         .task(id: engine.playbackPhase) {
@@ -115,7 +117,11 @@ struct StreamingPlayerView: View {
             rebuildPlayer(with: url)
         }
         .onChange(of: isActive) { _, active in
-            if !active {
+            if active {
+                if engine.selectedFileID != nil, engine.playbackURL == nil {
+                    Task { await engine.preparePlayback() }
+                }
+            } else {
                 pausePlayback()
             }
         }
