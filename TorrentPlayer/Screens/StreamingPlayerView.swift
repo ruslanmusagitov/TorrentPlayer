@@ -2,13 +2,15 @@
 //  StreamingPlayerView.swift
 //  TorrentPlayer
 //
-//  design/streaming_player/ — Task #7 stream bridge; Task #8 play/pause + dual progress.
+//  design/streaming_player/ — Task #7 stream bridge; Task #8 play/pause + dual progress;
+//  Task #15 / #22 embedded SwiftVLC for non-AVPlayer containers.
 //
 
 import SwiftUI
 #if os(macOS)
 import AVFoundation
 import AVKit
+import SwiftVLC
 #endif
 
 struct StreamingPlayerView: View {
@@ -19,6 +21,7 @@ struct StreamingPlayerView: View {
     @State private var bufferedFraction: Double = 0
     #if os(macOS)
     @State private var player: AVPlayer?
+    @State private var vlcPlayer: Player?
     @State private var timeObserver: Any?
     @State private var endObserver: NSObjectProtocol?
     #endif
@@ -51,7 +54,7 @@ struct StreamingPlayerView: View {
             rateBytesPerSecond: engine.downloadRateBytes,
             totalBytes: engine.selectedFile?.size ?? 0
         )
-        let protocolLabel = engine.usesExternalPlayer ? "VLC_HTTP" : "LOCAL_HTTP"
+        let protocolLabel = engine.usesEmbeddedVLC ? "SWIFT_VLC" : "LOCAL_HTTP"
         return [
             ("DL_SPEED", speed, KTColor.primary),
             ("PEERS_CONNECTED", peers, KTColor.secondary),
@@ -119,8 +122,29 @@ struct StreamingPlayerView: View {
             )
 
             #if os(macOS)
-            if let player, !engine.usesExternalPlayer {
+            if let player, !engine.usesEmbeddedVLC {
                 BareVideoView(player: player)
+            } else if let vlcPlayer, engine.usesEmbeddedVLC {
+                VideoView(vlcPlayer)
+                    .onChange(of: vlcPlayer.currentTime) { _, time in
+                        currentTime = Self.seconds(from: time)
+                    }
+                    .onChange(of: vlcPlayer.duration) { _, mediaDuration in
+                        if let mediaDuration {
+                            duration = Self.seconds(from: mediaDuration)
+                        }
+                    }
+                    .onChange(of: vlcPlayer.bufferFill) { _, fill in
+                        bufferedFraction = Double(fill)
+                    }
+                    .onChange(of: vlcPlayer.isPlaybackRequestedActive) { _, active in
+                        isPlaying = active
+                    }
+                    .onChange(of: vlcPlayer.state) { _, state in
+                        if case .stopped = state, vlcPlayer.didReachEnd {
+                            isPlaying = false
+                        }
+                    }
             } else {
                 playbackPlaceholder
             }
@@ -197,11 +221,21 @@ struct StreamingPlayerView: View {
 
     private var showsCenterPlayOverlay: Bool {
         #if os(macOS)
-        player != nil && !engine.usesExternalPlayer && !isPlaying && engine.playbackPhase == .ready
+        hasActivePlayer && !isPlaying && engine.playbackPhase == .ready
         #else
         false
         #endif
     }
+
+    #if os(macOS)
+    private var hasActivePlayer: Bool {
+        if engine.usesEmbeddedVLC {
+            vlcPlayer != nil
+        } else {
+            player != nil
+        }
+    }
+    #endif
 
     private var playbackPlaceholder: some View {
         VStack(spacing: KTSpacing.sm) {
@@ -251,11 +285,7 @@ struct StreamingPlayerView: View {
         case .idle:
             return "WAITING FOR STREAM"
         case .ready:
-            if engine.usesExternalPlayer {
-                return "OPENED IN EXTERNAL PLAYER (VLC)"
-            } else {
-                return "STARTING…"
-            }
+            return "STARTING…"
         }
     }
 
@@ -344,7 +374,7 @@ struct StreamingPlayerView: View {
     private var streamInfoText: String {
         let path = engine.selectedFile?.path ?? "—"
         let url = engine.playbackURL?.absoluteString ?? "—"
-        let playerKind = engine.usesExternalPlayer ? "EXTERNAL_VLC" : "AVPLAYER"
+        let playerKind = engine.usesEmbeddedVLC ? "EMBEDDED_VLC" : "AVPLAYER"
         let dl = Int(PlaybackFormatting.downloadFraction(engine.downloadProgress) * 100)
         return """
         FILE: \(path)
@@ -365,6 +395,11 @@ struct StreamingPlayerView: View {
 
     private func togglePlayPause() {
         #if os(macOS)
+        if let vlcPlayer, engine.usesEmbeddedVLC {
+            vlcPlayer.togglePlayPause()
+            isPlaying = vlcPlayer.isPlaybackRequestedActive
+            return
+        }
         guard let player else {
             isPlaying.toggle()
             return
@@ -388,8 +423,15 @@ struct StreamingPlayerView: View {
 
     private func seek(to seconds: TimeInterval) {
         #if os(macOS)
-        guard let player, duration > 0 else { return }
         let target = min(duration, max(0, seconds))
+        if let vlcPlayer, engine.usesEmbeddedVLC {
+            guard duration > 0 else { return }
+            let millis = Int64((target * 1000).rounded())
+            try? vlcPlayer.seek(to: .milliseconds(millis), fast: true)
+            currentTime = target
+            return
+        }
+        guard let player, duration > 0 else { return }
         let time = CMTime(seconds: target, preferredTimescale: 600)
         player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
         currentTime = target
@@ -399,7 +441,21 @@ struct StreamingPlayerView: View {
     #if os(macOS)
     private func rebuildPlayer(with url: URL?) {
         tearDownPlayer()
-        guard let url, !engine.usesExternalPlayer else { return }
+        guard let url else { return }
+
+        if engine.usesEmbeddedVLC {
+            let next = Player()
+            vlcPlayer = next
+            do {
+                try next.play(url: url)
+                isPlaying = true
+            } catch {
+                TPLog.error("SwiftVLC play failed: \(error.localizedDescription)")
+                isPlaying = false
+            }
+            return
+        }
+
         let next = AVPlayer(url: url)
         player = next
         attachObservers(to: next)
@@ -449,6 +505,8 @@ struct StreamingPlayerView: View {
         endObserver = nil
         player?.pause()
         player = nil
+        vlcPlayer?.stop()
+        vlcPlayer = nil
         currentTime = 0
         duration = 0
         bufferedFraction = 0
@@ -461,6 +519,10 @@ struct StreamingPlayerView: View {
         let end = range.start.seconds + range.duration.seconds
         guard end.isFinite else { return 0 }
         return PlaybackFormatting.fraction(current: end, duration: duration)
+    }
+
+    private static func seconds(from duration: Duration) -> TimeInterval {
+        Double(duration.milliseconds) / 1000.0
     }
     #endif
 

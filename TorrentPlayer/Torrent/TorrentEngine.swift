@@ -50,7 +50,8 @@ final class TorrentEngine {
     private(set) var peersConnected: Int = 0
     private(set) var piecesCompleted: Int = 0
     private(set) var piecesTotal: Int = 0
-    private(set) var usesExternalPlayer: Bool = false
+    /// True when the selected container needs SwiftVLC (MKV/AVI/etc.).
+    private(set) var usesEmbeddedVLC: Bool = false
 
     var selectedFile: TorrentFileItem? {
         guard let selectedFileID, let activeTorrent else { return nil }
@@ -67,7 +68,7 @@ final class TorrentEngine {
         )
     }
 
-    /// AVPlayer only handles a few containers; MKV/AVI/etc. need an external player (e.g. VLC).
+    /// AVPlayer only handles a few containers; MKV/AVI/etc. need embedded SwiftVLC.
     static func isAVPlayerCompatible(path: String) -> Bool {
         switch (path as NSString).pathExtension.lowercased() {
         case "mp4", "m4v", "mov":
@@ -332,9 +333,9 @@ final class TorrentEngine {
         playbackPhase = .buffering
         let fileIndex = file.id
         let leadBytes = min(streamingLeadBytes, max(file.size, 1))
-        usesExternalPlayer = !Self.isAVPlayerCompatible(path: file.path)
+        usesEmbeddedVLC = !Self.isAVPlayerCompatible(path: file.path)
         TPLog.playback(
-            "preparePlayback file=\(file.path) index=\(fileIndex) leadBytes=\(leadBytes) external=\(usesExternalPlayer) disk=\(diskURL.path)"
+            "preparePlayback file=\(file.path) index=\(fileIndex) leadBytes=\(leadBytes) embeddedVLC=\(usesEmbeddedVLC) disk=\(diskURL.path)"
         )
 
         do {
@@ -351,7 +352,7 @@ final class TorrentEngine {
             }
 
             // HTTP handlers must not await TorrentHandle — under peer load that stalls
-            // every VLC/browser request. Lead bytes are already on disk; a background
+            // every player/browser request. Lead bytes are already on disk; a background
             // task advances the gate as more contiguous bytes arrive.
             let gate = StreamingByteGate()
             gate.markReady(through: leadBytes)
@@ -387,10 +388,6 @@ final class TorrentEngine {
                 generation: generation
             )
             TPLog.playback("stream ready url=\(url.absoluteString) lead=\(leadBytes)")
-
-            if usesExternalPlayer {
-                openInExternalPlayer(url)
-            }
         } catch is TorrentError {
             guard generation == playbackGeneration else { return }
             TPLog.error("playback buffer timeout")
@@ -421,7 +418,7 @@ final class TorrentEngine {
         #endif
         playbackURL = nil
         playbackPhase = .idle
-        usesExternalPlayer = false
+        usesEmbeddedVLC = false
     }
 
     func refreshDownloadStatus() async {
@@ -585,35 +582,6 @@ final class TorrentEngine {
 
     private func isPlaybackGeneration(_ generation: UInt64) -> Bool {
         generation == playbackGeneration
-    }
-
-    /// MKV/AVI are opened in VLC. `NSWorkspace.shared.open(url)` uses the default
-    /// http(s) handler (Safari/Chrome) and will not play Matroska.
-    private func openInExternalPlayer(_ url: URL) {
-        let candidates = [
-            URL(fileURLWithPath: "/Applications/VLC.app"),
-            URL(fileURLWithPath: NSHomeDirectory() + "/Applications/VLC.app"),
-        ]
-        guard let vlc = candidates.first(where: {
-            FileManager.default.fileExists(atPath: $0.path)
-        }) else {
-            TPLog.error("VLC.app not found — install VLC or open \(url.absoluteString) manually")
-            playbackPhase = .failed(
-                "VLC not found. Install VLC from videolan.org, then try Stream Now again."
-            )
-            return
-        }
-        TPLog.playback("opening VLC at \(vlc.path) url=\(url.absoluteString)")
-        let configuration = NSWorkspace.OpenConfiguration()
-        NSWorkspace.shared.open(
-            [url],
-            withApplicationAt: vlc,
-            configuration: configuration
-        ) { _, error in
-            if let error {
-                TPLog.error("VLC open failed: \(error.localizedDescription)")
-            }
-        }
     }
     #endif
 
