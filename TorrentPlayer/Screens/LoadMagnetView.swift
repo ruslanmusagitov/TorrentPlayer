@@ -5,6 +5,7 @@
 //  Stub: design/load_magnet/
 //
 
+import SwiftData
 import SwiftUI
 #if os(macOS)
 import AppKit
@@ -14,6 +15,7 @@ import UIKit
 
 struct LoadMagnetView: View {
     @Environment(TorrentEngine.self) private var engine
+    @Environment(\.modelContext) private var modelContext
     @State private var magnetText = ""
     @State private var isLoading = false
     var onLoad: (() -> Void)?
@@ -207,6 +209,15 @@ struct LoadMagnetView: View {
 
         do {
             try await engine.addMagnet(magnetText)
+            do {
+                try TorrentHistoryEntry.recordLoad(
+                    magnetURI: engine.lastMagnetURI,
+                    torrent: engine.activeTorrent,
+                    in: modelContext
+                )
+            } catch {
+                TPLog.error("history record failed: \(error.localizedDescription)")
+            }
             onLoad?()
         } catch {
             // Engine already set .error for UI feedback (keeps previous torrent if any).
@@ -217,4 +228,5 @@ struct LoadMagnetView: View {
 #Preview {
     LoadMagnetView()
         .environment(TorrentEngine())
+        .modelContainer(for: TorrentHistoryEntry.self, inMemory: true)
 }
