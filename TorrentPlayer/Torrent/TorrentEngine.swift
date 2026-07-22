@@ -339,9 +339,10 @@ final class TorrentEngine {
 
         do {
             await applySequentialPriorityForSelection()
-            try await waitForLeadingBytesPolling(
+            try await waitForFileBytesPolling(
                 handle: handle,
                 fileIndex: fileIndex,
+                fileOffset: 0,
                 bytes: leadBytes,
                 generation: generation
             )
@@ -350,11 +351,42 @@ final class TorrentEngine {
                 return
             }
 
+            // MKV/AVI (SwiftVLC) probe cues near EOF immediately. Fetch a trailing
+            // window before advertising the stream, then resume sequential download.
+            var tailOffset: Int64 = 0
+            var tailBytes: Int64 = 0
+            if usesEmbeddedVLC, file.size > leadBytes {
+                tailBytes = min(streamingLeadBytes, file.size - leadBytes)
+                tailOffset = file.size - tailBytes
+                TPLog.playback("preparePlayback fetching VLC tail offset=\(tailOffset) bytes=\(tailBytes)")
+                await handle.prioritizeFileBytes(
+                    fileIndex: fileIndex,
+                    fileOffset: tailOffset,
+                    length: tailBytes,
+                    sequential: true
+                )
+                try await waitForFileBytesPolling(
+                    handle: handle,
+                    fileIndex: fileIndex,
+                    fileOffset: tailOffset,
+                    bytes: tailBytes,
+                    generation: generation
+                )
+                guard generation == playbackGeneration else {
+                    TPLog.playback("preparePlayback aborted (stale generation after tail wait)")
+                    return
+                }
+                await applySequentialPriorityForSelection()
+            }
+
             // HTTP handlers must not await TorrentHandle — under peer load that stalls
-            // every player/browser request. Lead bytes are already on disk; a background
-            // task advances the gate as more contiguous bytes arrive.
+            // every player/browser request. Lead (+ optional tail) bytes are already on
+            // disk; a background task advances the gate as more contiguous bytes arrive.
             let gate = StreamingByteGate()
             gate.markReady(through: leadBytes)
+            if tailBytes > 0 {
+                gate.markReady(range: tailOffset..<(tailOffset + tailBytes))
+            }
             let waiter: LocalHTTPStreamServer.ByteWaiter = { offset, length in
                 gate.isReady(offset: offset, length: length)
             }
@@ -386,7 +418,9 @@ final class TorrentEngine {
                 from: leadBytes,
                 generation: generation
             )
-            TPLog.playback("stream ready url=\(url.absoluteString) lead=\(leadBytes)")
+            TPLog.playback(
+                "stream ready url=\(url.absoluteString) lead=\(leadBytes) tail=\(tailBytes)"
+            )
         } catch is TorrentError {
             guard generation == playbackGeneration else { return }
             TPLog.error("playback buffer timeout")
@@ -499,9 +533,10 @@ final class TorrentEngine {
     #endif
 
     #if os(macOS) || os(iOS)
-    private func waitForLeadingBytesPolling(
+    private func waitForFileBytesPolling(
         handle: TorrentHandle,
         fileIndex: Int,
+        fileOffset: Int64,
         bytes: Int64,
         generation: UInt64
     ) async throws {
@@ -510,9 +545,10 @@ final class TorrentEngine {
             guard generation == playbackGeneration else { return }
             await refreshDownloadStatus()
             do {
-                try await handle.waitForLeadingBytes(
+                try await handle.waitForFileBytes(
                     fileIndex: fileIndex,
-                    bytes: bytes,
+                    fileOffset: fileOffset,
+                    length: bytes,
                     timeout: 2
                 )
                 await refreshDownloadStatus()

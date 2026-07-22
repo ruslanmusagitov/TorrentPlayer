@@ -231,6 +231,17 @@ struct TorrentEngineTests {
         #expect(gate.readyThroughOffset == 100)
     }
 
+    @Test func streamingByteGateCoversDisjointTailRange() {
+        let gate = StreamingByteGate()
+        gate.markReady(through: 2_000_000)
+        gate.markReady(range: 1_500_000_000..<1_502_000_000)
+        #expect(gate.isReady(offset: 0, length: 2_000_000))
+        #expect(gate.isReady(offset: 1_500_000_000, length: 2_000_000))
+        #expect(!gate.isReady(offset: 2_000_000, length: 1))
+        #expect(!gate.isReady(offset: 1_499_999_999, length: 2))
+        #expect(gate.readyThroughOffset == 2_000_000)
+    }
+
     @Test func localHTTPStreamServerStreamsBeforeFullFileReady() async throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("TorrentPlayerHTTPGrow-\(UUID().uuidString)", isDirectory: true)
