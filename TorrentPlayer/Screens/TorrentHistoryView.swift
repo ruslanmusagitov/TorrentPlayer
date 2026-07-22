@@ -136,8 +136,8 @@ struct TorrentHistoryView: View {
                             await resume(entry)
                         }
                     }
-                    .disabled(isResuming)
-                    .opacity(isResuming && !isThisResuming ? 0.45 : 1)
+                    .disabled(isResuming || !engine.isOperational)
+                    .opacity(isResuming && !isThisResuming || !engine.isOperational ? 0.45 : 1)
                 } else {
                     Text("UNAVAILABLE")
                         .font(KTTypography.labelCaps())
@@ -177,15 +177,6 @@ struct TorrentHistoryView: View {
 
         do {
             try await engine.addMagnet(entry.magnetURI)
-            do {
-                try TorrentHistoryEntry.recordLoad(
-                    magnetURI: engine.lastMagnetURI,
-                    torrent: engine.activeTorrent,
-                    in: modelContext
-                )
-            } catch {
-                TPLog.error("history record failed: \(error.localizedDescription)")
-            }
             onResume?()
         } catch {
             resumeError = error.localizedDescription
