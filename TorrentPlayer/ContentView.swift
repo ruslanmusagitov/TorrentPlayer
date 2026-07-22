@@ -52,18 +52,24 @@ struct ContentView: View {
     @ViewBuilder
     private var destinationView: some View {
         let playerActive = selection == .player
-        // Active tab sizes the container. Player is an overlay so a kept-alive
-        // StreamingPlayerView cannot inflate width for Load/Files/History.
-        tabContent
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay {
+        // Lock both layers to the container size so a kept-alive Player cannot
+        // inflate ideal width (layout bug on iPhone) while still hosting AV/VLC
+        // as a real ZStack child (overlay broke video playback).
+        GeometryReader { geo in
+            ZStack {
+                tabContent
+                    .frame(width: geo.size.width, height: geo.size.height)
+
                 if playerMounted || playerActive {
                     StreamingPlayerView(isActive: playerActive)
+                        .frame(width: geo.size.width, height: geo.size.height)
                         .opacity(playerActive ? 1 : 0)
                         .allowsHitTesting(playerActive)
                         .accessibilityHidden(!playerActive)
+                        .zIndex(playerActive ? 1 : 0)
                 }
             }
+        }
     }
 
     @ViewBuilder
