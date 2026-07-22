@@ -18,6 +18,9 @@ import UIKit
 #endif
 
 struct StreamingPlayerView: View {
+    /// When false (another tab is visible), playback pauses but the player stays mounted.
+    var isActive: Bool = true
+
     @Environment(TorrentEngine.self) private var engine
     @State private var isPlaying = false
     @State private var currentTime: TimeInterval = 0
@@ -98,6 +101,7 @@ struct StreamingPlayerView: View {
         .background(KTColor.background)
         #if os(macOS) || os(iOS)
         .task(id: engine.selectedFileID) {
+            guard engine.selectedFileID != nil else { return }
             await engine.preparePlayback()
         }
         .task(id: engine.playbackPhase) {
@@ -110,9 +114,10 @@ struct StreamingPlayerView: View {
         .onChange(of: engine.playbackURL) { _, url in
             rebuildPlayer(with: url)
         }
-        .onDisappear {
-            tearDownPlayer()
-            engine.stopPlayback()
+        .onChange(of: isActive) { _, active in
+            if !active {
+                pausePlayback()
+            }
         }
         #endif
     }
@@ -420,6 +425,19 @@ struct StreamingPlayerView: View {
         #endif
     }
 
+    /// Pauses without tearing down AVPlayer / VLC or the HTTP stream bridge.
+    private func pausePlayback() {
+        #if os(macOS) || os(iOS)
+        if let vlcPlayer, engine.usesEmbeddedVLC {
+            vlcPlayer.pause()
+            isPlaying = false
+            return
+        }
+        player?.pause()
+        isPlaying = false
+        #endif
+    }
+
     private func skip(by delta: TimeInterval) {
         guard duration > 0 else { return }
         seek(to: currentTime + delta)
@@ -453,7 +471,12 @@ struct StreamingPlayerView: View {
             vlcPlayer = next
             do {
                 try next.play(url: url)
-                isPlaying = true
+                if isActive {
+                    isPlaying = true
+                } else {
+                    next.pause()
+                    isPlaying = false
+                }
             } catch {
                 TPLog.error("SwiftVLC play failed: \(error.localizedDescription)")
                 isPlaying = false
@@ -464,8 +487,12 @@ struct StreamingPlayerView: View {
         let next = AVPlayer(url: url)
         player = next
         attachObservers(to: next)
-        next.play()
-        isPlaying = true
+        if isActive {
+            next.play()
+            isPlaying = true
+        } else {
+            isPlaying = false
+        }
     }
 
     private func activatePlaybackAudioSessionIfNeeded() {
