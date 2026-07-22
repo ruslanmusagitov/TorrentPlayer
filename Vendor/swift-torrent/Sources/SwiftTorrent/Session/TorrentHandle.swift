@@ -361,11 +361,43 @@ public actor TorrentHandle {
             TorrentLog.session("prioritizeFile(\(fileIndex)) skipped — invalid file index")
             return
         }
-        let mode: PiecePickMode = sequential ? .sequential : .rarestFirst
-        TorrentLog.session(
-            "prioritizeFile(\(fileIndex)) range=\(range.lowerBound)..<\(range.upperBound) mode=\(mode) piecesTotal=\(info.pieceCount)"
-        )
+        await applyPiecePriority(range: range, mode: sequential ? .sequential : .rarestFirst, label: "file=\(fileIndex)")
+    }
 
+    /// Download pieces covering `[fileOffset, fileOffset + length)` within `fileIndex`.
+    /// Used to fetch MKV/AVI trailing cues before progressive playback starts.
+    public func prioritizeFileBytes(
+        fileIndex: Int,
+        fileOffset: Int64,
+        length: Int64,
+        sequential: Bool = true
+    ) async {
+        guard let info else {
+            TorrentLog.session("prioritizeFileBytes(\(fileIndex)) skipped — no metadata")
+            return
+        }
+        let storage = FileStorage(info: info)
+        guard let range = storage.pieceRange(
+            forFileIndex: fileIndex,
+            fileOffset: fileOffset,
+            length: length
+        ) else {
+            TorrentLog.session(
+                "prioritizeFileBytes(\(fileIndex)) skipped — invalid region offset=\(fileOffset) length=\(length)"
+            )
+            return
+        }
+        await applyPiecePriority(
+            range: range,
+            mode: sequential ? .sequential : .rarestFirst,
+            label: "file=\(fileIndex) bytes=\(fileOffset)+\(length)"
+        )
+    }
+
+    private func applyPiecePriority(range: Range<Int>, mode: PiecePickMode, label: String) async {
+        TorrentLog.session(
+            "prioritize \(label) range=\(range.lowerBound)..<\(range.upperBound) mode=\(mode) piecesTotal=\(info?.pieceCount ?? 0)"
+        )
         await peerManager.applyPiecePriority(range: range, mode: mode)
         if var local = piecePicker {
             local.setPriority(range: range, mode: mode)

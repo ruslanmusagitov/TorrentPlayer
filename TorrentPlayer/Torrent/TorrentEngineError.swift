@@ -21,7 +21,7 @@ enum TorrentEngineError: LocalizedError, Equatable {
         case .sessionNotReady:
             "Torrent session is not ready yet."
         case .unsupportedPlatform:
-            "Torrent engine is available on macOS only for now."
+            "Torrent engine is not available on this platform."
         case .metadataTimeout:
             "Timed out waiting for torrent metadata."
         case .noSelectedFile:

@@ -7,7 +7,7 @@
 
 import Foundation
 import OSLog
-#if os(macOS)
+#if os(macOS) || os(iOS)
 import SwiftTorrent
 #endif
 
@@ -15,7 +15,7 @@ enum TPLog {
     /// Starts file logging under Application Support/TorrentPlayer/Logs/debug.log
     @discardableResult
     static func bootstrapFileLogging() -> URL? {
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         do {
             let base = try FileManager.default.url(
                 for: .applicationSupportDirectory,
@@ -39,7 +39,7 @@ enum TPLog {
     }
 
     static var logFileURL: URL? {
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         TorrentLog.currentLogFileURL
         #else
         nil
@@ -47,25 +47,25 @@ enum TPLog {
     }
 
     static func engine(_ message: String) {
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         TorrentLog.app("Engine", message)
         #endif
     }
 
     static func playback(_ message: String) {
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         TorrentLog.app("Playback", message)
         #endif
     }
 
     static func http(_ message: String) {
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         TorrentLog.app("HTTP", message)
         #endif
     }
 
     static func error(_ message: String) {
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         TorrentLog.error("Engine", message)
         #endif
     }
