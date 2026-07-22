@@ -10,6 +10,8 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var selection: AppDestination = .load
+    /// Keeps StreamingPlayerView alive across tab switches only after the first Player visit.
+    @State private var playerMounted = false
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     private var usesSideNav: Bool {
@@ -37,6 +39,11 @@ struct ContentView: View {
             }
         }
         .background(KTColor.background.ignoresSafeArea())
+        .onChange(of: selection) { _, newValue in
+            if newValue == .player {
+                playerMounted = true
+            }
+        }
         #if os(macOS)
         .frame(minWidth: 900, minHeight: 640)
         #endif
@@ -63,11 +70,14 @@ struct ContentView: View {
                 }
             }
 
-            StreamingPlayerView(isActive: playerActive)
-                .opacity(playerActive ? 1 : 0)
-                .allowsHitTesting(playerActive)
-                .accessibilityHidden(!playerActive)
-                .zIndex(playerActive ? 1 : 0)
+            // Mount on first Player visit (`playerActive`); keep mounted afterwards (`playerMounted`).
+            if playerMounted || playerActive {
+                StreamingPlayerView(isActive: playerActive)
+                    .opacity(playerActive ? 1 : 0)
+                    .allowsHitTesting(playerActive)
+                    .accessibilityHidden(!playerActive)
+                    .zIndex(playerActive ? 1 : 0)
+            }
         }
     }
 }
