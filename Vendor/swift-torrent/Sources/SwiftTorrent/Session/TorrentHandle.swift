@@ -28,6 +28,8 @@ public actor TorrentHandle {
     private var lastUploadRateSample: Int64 = 0
     private var downloadRate: Double = 0
     private var uploadRate: Double = 0
+    /// Empty monitor ticks before clearing `downloadRate` (piece completions are bursty).
+    private var downloadRateZeroTicks: Int = 0
     private var reannounceTask: Task<Void, Never>?
     private var downloadMonitorTask: Task<Void, Never>?
     private var metadataExchange: MetadataExchange?
@@ -168,10 +170,14 @@ public actor TorrentHandle {
         }
     }
 
+    private static let downloadMonitorIntervalSeconds: Double = 2
+    /// Keep last non-zero rate across this many empty 2s windows (~6s) so UI doesn't flicker.
+    private static let downloadRateHoldZeroTicks = 3
+
     private func startDownloadMonitor() {
         downloadMonitorTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: .seconds(Self.downloadMonitorIntervalSeconds))
                 guard let self, !Task.isCancelled else { break }
                 let complete = await self.checkCompletion()
                 if complete {
@@ -181,14 +187,25 @@ public actor TorrentHandle {
                 await self.peerManager.checkTimeouts()
                 // Rough rate from bytes completed in this monitor tick.
                 let sample = await self.lastDownloadRateSample
-                await self.setDownloadRate(Double(sample) / 2.0)
+                await self.updateDownloadRate(sampleBytes: sample)
                 await self.resetDownloadRateSample()
             }
         }
     }
 
-    private func setDownloadRate(_ rate: Double) {
-        downloadRate = rate
+    private func updateDownloadRate(sampleBytes: Int64) {
+        let instant = Double(sampleBytes) / Self.downloadMonitorIntervalSeconds
+        if instant > 0 {
+            // Blend so a single fat piece doesn't spike the displayed rate alone.
+            downloadRate = downloadRate > 0 ? (downloadRate * 0.4 + instant * 0.6) : instant
+            downloadRateZeroTicks = 0
+        } else {
+            downloadRateZeroTicks += 1
+            if downloadRateZeroTicks >= Self.downloadRateHoldZeroTicks {
+                downloadRate = 0
+            }
+            // else keep previous downloadRate — empty ticks are normal between pieces
+        }
     }
 
     private func resetDownloadRateSample() {
