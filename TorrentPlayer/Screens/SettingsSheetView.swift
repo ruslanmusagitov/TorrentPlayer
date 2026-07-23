@@ -121,7 +121,7 @@ struct SettingsSheetView: View {
         .background(KTColor.background)
         .onAppear { refreshUsage() }
         .confirmationDialog(
-            "Delete all downloaded torrent files from disk?",
+            "Delete all downloaded torrent files and resume data from disk?",
             isPresented: $confirmClearDownloads,
             titleVisibility: .visible
         ) {
@@ -131,7 +131,7 @@ struct SettingsSheetView: View {
             Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog(
-            "Delete resume piece data? Active downloads will restart from scratch next time.",
+            "Delete resume piece data? Persistence stops until you load a torrent again.",
             isPresented: $confirmClearResume,
             titleVisibility: .visible
         ) {
@@ -207,8 +207,8 @@ struct SettingsSheetView: View {
             return
         }
         #if os(macOS)
-        NSWorkspace.shared.activateFileViewerSelecting([url])
-        statusMessage = "Revealed in Finder"
+        NSWorkspace.shared.open(url)
+        statusMessage = "Opened in Finder"
         #else
         UIPasteboard.general.string = url.path
         statusMessage = "Path copied"
@@ -216,7 +216,12 @@ struct SettingsSheetView: View {
     }
 
     private func refreshUsage() {
-        diskUsageBytes = TorrentEngine.downloadsDiskUsageBytes()
+        Task {
+            let bytes = await Task.detached(priority: .utility) {
+                TorrentEngine.downloadsDiskUsageBytes()
+            }.value
+            diskUsageBytes = bytes
+        }
     }
 
     private func clearDownloads() async {
@@ -226,7 +231,7 @@ struct SettingsSheetView: View {
         do {
             try await engine.clearDownloads()
             refreshUsage()
-            statusMessage = "Downloads cleared"
+            statusMessage = "Downloads and resume data cleared"
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -238,7 +243,7 @@ struct SettingsSheetView: View {
         defer { isClearing = false }
         do {
             try engine.clearResumeData()
-            statusMessage = "Resume data cleared"
+            statusMessage = "Resume data cleared (won't rewrite until next load)"
         } catch {
             statusMessage = error.localizedDescription
         }

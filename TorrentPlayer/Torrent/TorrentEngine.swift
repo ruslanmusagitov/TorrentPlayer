@@ -87,6 +87,8 @@ final class TorrentEngine {
     private var resumePersistTask: Task<Void, Never>?
     private var lastResumePersistAt: ContinuousClock.Instant?
     private var lastPersistedPiecesCompleted: Int = -1
+    /// Cleared by Settings → Clear Resume until the next torrent load restarts persistence.
+    private var resumePersistenceEnabled = true
     #endif
 
     private let metadataTimeoutSeconds: Int
@@ -278,6 +280,7 @@ final class TorrentEngine {
             lastResumePersistAt = nil
             phase = .loaded(torrent)
             await applySequentialPriorityForSelection()
+            resumePersistenceEnabled = true
             await persistResumeIfNeeded(force: true)
             startResumePersistLoop()
         } catch let error as TorrentEngineError {
@@ -490,6 +493,7 @@ final class TorrentEngine {
     /// Save resume data for the active torrent (throttled unless `force`).
     func persistResumeIfNeeded(force: Bool = false) async {
         #if os(macOS) || os(iOS)
+        guard resumePersistenceEnabled else { return }
         guard let handle = activeHandle, let infoHash = activeInfoHash else { return }
 
         let now = ContinuousClock.now
@@ -517,6 +521,7 @@ final class TorrentEngine {
     #if os(macOS) || os(iOS)
     private func startResumePersistLoop() {
         stopResumePersistLoop()
+        resumePersistenceEnabled = true
         resumePersistTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.resumePersistInterval)
@@ -649,9 +654,11 @@ final class TorrentEngine {
     }
 
     /// Stops playback, removes the active torrent from the session, and deletes Downloads contents.
+    /// Also wipes Resume/ so the next magnet load cannot restore phantom completed pieces.
     func clearDownloads() async throws {
         #if os(macOS) || os(iOS)
         stopResumePersistLoop()
+        resumePersistenceEnabled = false
         stopPlayback()
         if let session, let infoHash = activeInfoHash {
             await session.removeTorrent(infoHash)
@@ -678,19 +685,31 @@ final class TorrentEngine {
 
         let dir = try Self.downloadsDirectory()
         try Self.removeContents(of: dir)
+        #if os(macOS) || os(iOS)
+        try wipeResumeDirectory()
+        #endif
         TPLog.engine("cleared downloads at \(dir.path)")
     }
 
     /// Deletes all resume `.dat` files under Application Support/TorrentPlayer/Resume.
+    /// Stops persistence so an active torrent cannot rewrite resume within ~5s.
     func clearResumeData() throws {
         #if os(macOS) || os(iOS)
+        stopResumePersistLoop()
+        resumePersistenceEnabled = false
+        try wipeResumeDirectory()
+        TPLog.engine("cleared resume data")
+        #endif
+    }
+
+    #if os(macOS) || os(iOS)
+    private func wipeResumeDirectory() throws {
         let dir = try Self.resumeDirectory()
         try Self.removeContents(of: dir)
         lastResumePersistAt = nil
         lastPersistedPiecesCompleted = -1
-        TPLog.engine("cleared resume data at \(dir.path)")
-        #endif
     }
+    #endif
 
     private static func removeContents(of directory: URL) throws {
         let fm = FileManager.default
