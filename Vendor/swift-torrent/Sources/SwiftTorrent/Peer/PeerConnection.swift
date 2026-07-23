@@ -1,7 +1,6 @@
 import Foundation
 import NIOCore
 import NIOPosix
-import NIOExtras
 
 /// Manages a single peer TCP connection using SwiftNIO.
 public final class PeerConnection: @unchecked Sendable {

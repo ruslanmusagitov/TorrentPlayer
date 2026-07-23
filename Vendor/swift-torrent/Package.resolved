@@ -1,5 +1,4 @@
 {
-  "originHash" : "48195968bb195fe8b505e1d74c7d2bb6e8c5b77fedb64d4c3992ff290613c146",
   "pins" : [
     {
       "identity" : "swift-asn1",
@@ -51,19 +50,10 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-system.git",
       "state" : {
-        "revision" : "b5544ba79a70a0cb3563e75bf26dc198d6b40ed3",
-        "version" : "1.7.4"
-      }
-    },
-    {
-      "identity" : "swiftvlc",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/harflabs/SwiftVLC.git",
-      "state" : {
-        "revision" : "192393a45cdcd7ebb6befac26586360b8b1676b3",
-        "version" : "1.0.0"
+        "revision" : "50688cacbd41d547e9eb9f7a213542340b7c442b",
+        "version" : "1.7.5"
       }
     }
   ],
-  "version" : 3
+  "version" : 2
 }
