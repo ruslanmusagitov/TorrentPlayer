@@ -81,12 +81,18 @@ public actor DHTTraversal {
                 }
             }
 
+            // Prefer returning as soon as we have peers; keep iterating while empty.
             if !peers.isEmpty { break }
 
             closest = await dhtNode.closestNodes(to: target)
         }
 
-        return peers
+        // Deduplicate by address:port
+        var seen = Set<String>()
+        return peers.filter { peer in
+            let key = "\(peer.0):\(peer.1)"
+            return seen.insert(key).inserted
+        }
     }
 
     /// Extract peers from a get_peers response.

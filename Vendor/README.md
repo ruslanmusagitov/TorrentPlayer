@@ -19,3 +19,7 @@ Local copy of [warppipe/swift-torrent](https://github.com/warppipe/swift-torrent
   - Piece completion requires all block offsets (not just buffer length) before SHA-1 verify.
   - Ignore duplicate BEP-9 metadata completions (was resetting picker to 0..<0 and disconnecting peers in a loop).
   - `TorrentLog` (OSLog + optional file) for peer/piece/session diagnostics.
+- Peer connectivity:
+  - `Session.startListening()` binds TCP `listenPort` and accepts inbound BitTorrent handshakes (`IncomingPeerHandler` → `PeerManager.acceptIncoming`).
+  - Tracker announces advertise `settings.listenPort` (was hard-coded 6881).
+  - DHT `get_peers` is wired: after each torrent start, `Session` runs iterative `DHTTraversal.getPeers` and feeds addresses into `TorrentHandle.addPeer`.

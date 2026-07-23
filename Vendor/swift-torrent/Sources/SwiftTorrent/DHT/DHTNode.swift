@@ -51,6 +51,9 @@ public actor DHTNode {
 
         // Bootstrap: contact well-known nodes
         await bootstrap()
+        // Allow bootstrap responses to land in the routing table.
+        try? await Task.sleep(for: .seconds(1))
+        TorrentLog.session("DHT bootstrap done nodes=\(routingTable.nodeCount)")
     }
 
     /// Bootstrap by contacting well-known DHT nodes.
