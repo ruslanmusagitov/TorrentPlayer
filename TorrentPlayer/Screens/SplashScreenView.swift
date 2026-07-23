@@ -8,25 +8,19 @@
 import SwiftUI
 
 struct SplashScreenView: View {
-    var isReady: Bool
+    var bootStep: TorrentEngine.BootStep
+    var bootProgress: Double
     var onFinished: () -> Void
 
-    @State private var progress: Double = 0.12
-    @State private var statusIndex = 0
-    @State private var statusPulse = true
     @State private var didFinish = false
-
-    private let statuses = [
-        "> INITIALIZING_CORE_ENGINE...",
-        "> SYNCING_DHT_PROTOCOLS...",
-        "> VERIFYING_BLOCK_INTEGRITY...",
-        "> ALLOCATING_BUFFER_SPACE...",
-        "> HANDSHAKING_PEER_NODES...",
-    ]
 
     private var versionLabel: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
         return "v.\(version)_STABLE"
+    }
+
+    private var isTerminal: Bool {
+        bootStep.isTerminal
     }
 
     var body: some View {
@@ -55,9 +49,14 @@ struct SplashScreenView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Torrent Player launching")
-        .task { await runBootSequence() }
-        .onChange(of: isReady) { _, ready in
-            if ready { Task { await finishIfPossible(forceComplete: true) } }
+        .task(id: isTerminal) {
+            await finishIfPossible()
+        }
+        .onChange(of: bootStep) { _, _ in
+            Task { await finishIfPossible() }
+        }
+        .onChange(of: bootProgress) { _, _ in
+            Task { await finishIfPossible() }
         }
     }
 
@@ -120,7 +119,7 @@ struct SplashScreenView: View {
                 GeometryReader { geo in
                     Rectangle()
                         .fill(KTColor.tertiary)
-                        .frame(width: max(0, geo.size.width * progress))
+                        .frame(width: max(0, geo.size.width * bootProgress))
                 }
 
                 HazardStripes()
@@ -128,20 +127,21 @@ struct SplashScreenView: View {
             }
             .frame(height: 32)
             .thickBorder()
+            .animation(.easeOut(duration: 0.2), value: bootProgress)
 
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(didFinish ? "> ENGINE_READY_STABLE" : statuses[statusIndex])
+                    Text(bootStep.statusLine)
                         .font(KTTypography.technicalMD())
-                        .foregroundStyle(didFinish ? KTColor.tertiary : KTColor.onBackground)
+                        .foregroundStyle(isTerminal && bootStep == .ready ? KTColor.tertiary : KTColor.onBackground)
                         .textCase(.uppercase)
-                        .opacity(statusPulse || didFinish ? 1 : 0.75)
-                    Text("ESTABLISHING_DHT_NODE_NETWORK")
+                    Text(bootStep.secondaryLine)
                         .font(KTTypography.technicalSM())
                         .foregroundStyle(KTColor.onBackground.opacity(0.6))
+                        .lineLimit(2)
                 }
                 Spacer()
-                Text("\(Int(progress * 100))%")
+                Text("\(Int(bootProgress * 100))%")
                     .font(KTTypography.technicalMD())
                     .fontWeight(.bold)
                     .foregroundStyle(KTColor.onBackground)
@@ -167,29 +167,10 @@ struct SplashScreenView: View {
     }
 
     @MainActor
-    private func runBootSequence() async {
-        while !didFinish {
-            try? await Task.sleep(for: .milliseconds(200))
-            let step = isReady ? Double.random(in: 0.04...0.08) : Double.random(in: 0.008...0.025)
-            progress = min(isReady ? 1 : 0.92, progress + step)
-            if Double.random(in: 0...1) > 0.8 {
-                statusIndex = (statusIndex + 1) % statuses.count
-            }
-            statusPulse.toggle()
-            await finishIfPossible(forceComplete: false)
-        }
-    }
-
-    @MainActor
-    private func finishIfPossible(forceComplete: Bool) async {
+    private func finishIfPossible() async {
         guard !didFinish else { return }
-        guard isReady else { return }
-        if forceComplete {
-            progress = 1
-        }
-        guard progress >= 1 else { return }
+        guard bootStep.isTerminal, bootProgress >= 1 else { return }
         didFinish = true
-        statusPulse = true
         try? await Task.sleep(for: .milliseconds(350))
         onFinished()
     }
@@ -228,5 +209,5 @@ private struct DotGridOverlay: View {
 }
 
 #Preview {
-    SplashScreenView(isReady: false, onFinished: {})
+    SplashScreenView(bootStep: .bootstrappingDHT, bootProgress: 0.85, onFinished: {})
 }
