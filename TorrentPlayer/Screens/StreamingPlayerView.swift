@@ -190,85 +190,93 @@ struct StreamingPlayerView: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             #if os(macOS) || os(iOS)
             if hasActivePlayer {
                 videoSurface
                     .id(videoAttachID)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     // UIViewRepresentable hosts often win hit-testing over SwiftUI controls.
                     .allowsHitTesting(false)
             } else {
                 playbackPlaceholder
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             #else
             playbackPlaceholder
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             #endif
 
             // Tap target under chrome — toggles / reveals controls without shifting layout.
             Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     handleCanvasTap()
                 }
 
-            if controlsVisible {
-                VStack {
-                    HStack {
-                        Text(liveBadgeText)
-                            .font(KTTypography.technicalSM())
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.black.opacity(0.55))
-                        Spacer()
-                        // Top-right: stays visible on narrow phones where the bottom
-                        // transport row clips the fullscreen control past the volume bar.
-                        controlButton(
-                            systemImage: isFullscreen ? "xmark" : fullscreenButtonImage,
-                            fill: .white,
-                            tint: KTColor.onBackground
-                        ) {
-                            userInteractedWithControls()
-                            toggleFullscreen()
-                        }
-                    }
-                    .padding(KTSpacing.sm)
-
+            // Keep chrome in the hierarchy (opacity only). Removing the VStack+Spacer
+            // collapses the ZStack to the video's intrinsic size and shrinks playback.
+            VStack {
+                HStack {
+                    Text(liveBadgeText)
+                        .font(KTTypography.technicalSM())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.55))
                     Spacer()
-
-                    HStack(spacing: KTSpacing.sm) {
-                        controlButton(
-                            systemImage: isPlaying ? "pause.fill" : "play.fill",
-                            fill: KTColor.primaryContainer,
-                            tint: KTColor.onPrimaryContainer
-                        ) {
-                            userInteractedWithControls()
-                            togglePlayPause()
-                        }
-                        controlButton(systemImage: "backward.fill", fill: .white, tint: KTColor.onBackground) {
-                            userInteractedWithControls()
-                            skip(by: -10)
-                        }
-                        controlButton(systemImage: "forward.fill", fill: .white, tint: KTColor.onBackground) {
-                            userInteractedWithControls()
-                            skip(by: 10)
-                        }
-                        Spacer(minLength: KTSpacing.xs)
-                        volumeControl
-                    }
-                    .padding(.horizontal, KTSpacing.md)
-                    .padding(.top, KTSpacing.md)
-                    .padding(.bottom, isFullscreen ? KTSpacing.sm : KTSpacing.md)
-
-                    if isFullscreen {
-                        progressSection(overlayOnVideo: true)
-                            .padding(.horizontal, KTSpacing.md)
-                            .padding(.bottom, KTSpacing.md)
+                    // Top-right: stays visible on narrow phones where the bottom
+                    // transport row clips the fullscreen control past the volume bar.
+                    controlButton(
+                        systemImage: isFullscreen ? "xmark" : fullscreenButtonImage,
+                        fill: .white,
+                        tint: KTColor.onBackground
+                    ) {
+                        userInteractedWithControls()
+                        toggleFullscreen()
                     }
                 }
-                .transition(.opacity)
+                .padding(KTSpacing.sm)
+
+                Spacer(minLength: 0)
+
+                HStack(spacing: KTSpacing.sm) {
+                    controlButton(
+                        systemImage: isPlaying ? "pause.fill" : "play.fill",
+                        fill: KTColor.primaryContainer,
+                        tint: KTColor.onPrimaryContainer
+                    ) {
+                        userInteractedWithControls()
+                        togglePlayPause()
+                    }
+                    controlButton(systemImage: "backward.fill", fill: .white, tint: KTColor.onBackground) {
+                        userInteractedWithControls()
+                        skip(by: -10)
+                    }
+                    controlButton(systemImage: "forward.fill", fill: .white, tint: KTColor.onBackground) {
+                        userInteractedWithControls()
+                        skip(by: 10)
+                    }
+                    Spacer(minLength: KTSpacing.xs)
+                    volumeControl
+                }
+                .padding(.horizontal, KTSpacing.md)
+                .padding(.top, KTSpacing.md)
+                .padding(.bottom, isFullscreen ? KTSpacing.sm : KTSpacing.md)
+
+                if isFullscreen {
+                    progressSection(overlayOnVideo: true)
+                        .padding(.horizontal, KTSpacing.md)
+                        .padding(.bottom, KTSpacing.md)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .opacity(controlsVisible ? 1 : 0)
+            .allowsHitTesting(controlsVisible)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeInOut(duration: 0.25), value: controlsVisible)
     }
 
