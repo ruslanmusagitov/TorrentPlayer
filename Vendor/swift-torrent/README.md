@@ -31,7 +31,6 @@ A pure Swift BitTorrent library targeting macOS 14+ and iOS 17+. Implements BEP-
 ## Dependencies
 
 - [swift-nio](https://github.com/apple/swift-nio) — async TCP/UDP networking
-- [swift-nio-extras](https://github.com/apple/swift-nio-extras) — byte buffer utilities
 - [swift-crypto](https://github.com/apple/swift-crypto) — SHA-1, SHA-256
 
 ## Build

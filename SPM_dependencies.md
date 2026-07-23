@@ -81,7 +81,7 @@ flowchart TB
 
 ## Заметки
 
-- **`swift-nio-extras` удалён** в ветке `chore/remove-swift-nio-extras`: продукт `NIOExtras` не использовался, но тянул ~10 лишних пакетов.
+- **`swift-nio-extras` удалён**: продукт `NIOExtras` не использовался, но тянул ~10 лишних пакетов.
 - **SwiftVLC** внутри использует binary `libvlc` xcframework; его SPM-deps для docs/tests (`swift-docc-plugin`, `swift-custom-dump`) в app lockfile как runtime не фигурируют.
 - Тестовые таргеты Xcode не линкуют SPM-продукты напрямую; `SwiftTorrent` доступен через app / `@testable import`.
 - После смены зависимостей в Xcode: File → Packages → Reset Package Caches / Resolve Package Versions, чтобы обновить workspace `Package.resolved`.
