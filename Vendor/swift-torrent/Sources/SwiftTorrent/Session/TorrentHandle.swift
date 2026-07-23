@@ -51,7 +51,8 @@ public actor TorrentHandle {
         self.pendingResumeData = params.resumeData
         self.peerManager = PeerManager(
             infoHash: hash.bytes, peerID: peerID, group: group,
-            maxConnections: settings.maxConnectionsPerTorrent
+            maxConnections: settings.maxConnectionsPerTorrent,
+            seedingEnabled: settings.seedingEnabled
         )
 
         if let magnet = params.magnetLink, !magnet.trackers.isEmpty {
@@ -83,6 +84,9 @@ public actor TorrentHandle {
         await peerManager.setOnPieceCompleted { [weak self] index in
             Task { await self?.notePieceDownloaded(index: index) }
         }
+        await peerManager.setOnBlockUploaded { [weak self] bytes in
+            Task { await self?.noteBlockUploaded(bytes: bytes) }
+        }
 
         await applyPendingResumeData(to: pm)
     }
@@ -100,6 +104,16 @@ public actor TorrentHandle {
         guard let pm = pieceManager else { return }
         totalDownloaded += Int64(await pm.expectedPieceSize(index))
         lastDownloadRateSample += Int64(await pm.expectedPieceSize(index))
+    }
+
+    private func noteBlockUploaded(bytes: Int) {
+        totalUploaded += Int64(bytes)
+        lastUploadRateSample += Int64(bytes)
+    }
+
+    /// Enable or disable uploading completed pieces to peers.
+    public func setSeedingEnabled(_ enabled: Bool) async {
+        await peerManager.setSeedingEnabled(enabled)
     }
 
     /// Complete initialization for .torrent-file init path (must be called after init).

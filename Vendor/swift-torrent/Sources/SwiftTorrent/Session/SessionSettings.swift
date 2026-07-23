@@ -11,6 +11,8 @@ public struct SessionSettings: Sendable {
     public var dhtPort: Int
     public var userAgent: String
     public var savePath: String
+    /// When false (default), advertise empty bitfield and do not serve piece requests.
+    public var seedingEnabled: Bool
 
     public init(
         listenPort: UInt16 = 6881,
@@ -21,7 +23,8 @@ public struct SessionSettings: Sendable {
         dhtEnabled: Bool = true,
         dhtPort: Int = 6881,
         userAgent: String = "SwiftTorrent/1.0",
-        savePath: String = NSTemporaryDirectory()
+        savePath: String = NSTemporaryDirectory(),
+        seedingEnabled: Bool = false
     ) {
         self.listenPort = listenPort
         self.maxConnections = maxConnections
@@ -32,5 +35,6 @@ public struct SessionSettings: Sendable {
         self.dhtPort = dhtPort
         self.userAgent = userAgent
         self.savePath = savePath
+        self.seedingEnabled = seedingEnabled
     }
 }
