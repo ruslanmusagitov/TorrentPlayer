@@ -12,6 +12,8 @@ struct ContentView: View {
     @State private var selection: AppDestination = .load
     /// Keeps StreamingPlayerView alive across tab switches only after the first Player visit.
     @State private var playerMounted = false
+    /// In-place player fullscreen — hides shell chrome so the same video surface can expand.
+    @State private var playerFullscreen = false
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     private var usesSideNav: Bool {
@@ -24,24 +26,32 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            AppHeaderBar()
+            if !playerFullscreen {
+                AppHeaderBar()
+            }
 
             if usesSideNav {
                 HStack(spacing: 0) {
-                    SideNavBar(selection: $selection)
+                    if !playerFullscreen {
+                        SideNavBar(selection: $selection)
+                    }
                     destinationView
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
                 destinationView
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                BottomNavBar(selection: $selection)
+                if !playerFullscreen {
+                    BottomNavBar(selection: $selection)
+                }
             }
         }
-        .background(KTColor.background.ignoresSafeArea())
+        .background((playerFullscreen ? Color.black : KTColor.background).ignoresSafeArea())
         .onChange(of: selection) { _, newValue in
             if newValue == .player {
                 playerMounted = true
+            } else {
+                playerFullscreen = false
             }
         }
         #if os(macOS)
@@ -61,7 +71,7 @@ struct ContentView: View {
                     .frame(width: geo.size.width, height: geo.size.height)
 
                 if playerMounted || playerActive {
-                    StreamingPlayerView(isActive: playerActive)
+                    StreamingPlayerView(isActive: playerActive, isFullscreen: $playerFullscreen)
                         .frame(width: geo.size.width, height: geo.size.height)
                         .opacity(playerActive ? 1 : 0)
                         .allowsHitTesting(playerActive)
