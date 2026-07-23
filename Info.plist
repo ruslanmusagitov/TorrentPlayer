@@ -9,5 +9,7 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>TorrentPlayer discovers nearby peers to stream video over BitTorrent.</string>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
 </dict>
 </plist>

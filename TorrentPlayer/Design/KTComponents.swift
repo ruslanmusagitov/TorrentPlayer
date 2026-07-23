@@ -440,6 +440,9 @@ struct BottomNavBar: View {
 }
 
 struct HazardStripes: View {
+    /// Player download fill needs the solid base; splash overlay should be stripes only.
+    var showsBackground: Bool = true
+
     var body: some View {
         Canvas { context, size in
             let stripeWidth: CGFloat = 10
@@ -455,6 +458,10 @@ struct HazardStripes: View {
                 x += stripeWidth * 2
             }
         }
-        .background(KTColor.surfaceVariant)
+        .background {
+            if showsBackground {
+                KTColor.surfaceVariant
+            }
+        }
     }
 }
