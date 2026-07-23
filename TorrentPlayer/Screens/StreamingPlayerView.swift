@@ -32,11 +32,14 @@ struct StreamingPlayerView: View {
     @State private var volume: Float = 1.0
     @State private var controlsVisible = true
     @State private var controlsHideToken = UUID()
+    @State private var audioTrackOptions: [AudioTrackOption] = []
+    @State private var showAudioTrackMenu = false
     #if os(macOS) || os(iOS)
     @State private var player: AVPlayer?
     @State private var vlcPlayer: Player?
     @State private var timeObserver: Any?
     @State private var endObserver: NSObjectProtocol?
+    @State private var avAudibleGroup: AVMediaSelectionGroup?
     /// Bumped after macOS window fullscreen so AV/VLC surfaces re-attach.
     @State private var videoAttachID = 0
     #endif
@@ -242,6 +245,12 @@ struct StreamingPlayerView: View {
 
                 Spacer(minLength: 0)
 
+                if showAudioTrackMenu, AudioTrackSelection.shouldShowPicker(trackCount: audioTrackOptions.count) {
+                    audioTrackMenu
+                        .padding(.horizontal, KTSpacing.md)
+                        .padding(.bottom, KTSpacing.xs)
+                }
+
                 HStack(spacing: KTSpacing.sm) {
                     controlButton(
                         systemImage: isPlaying ? "pause.fill" : "play.fill",
@@ -260,6 +269,19 @@ struct StreamingPlayerView: View {
                         skip(by: 10)
                     }
                     Spacer(minLength: KTSpacing.xs)
+                    if AudioTrackSelection.shouldShowPicker(trackCount: audioTrackOptions.count) {
+                        controlButton(
+                            systemImage: "waveform",
+                            fill: showAudioTrackMenu ? KTColor.tertiaryContainer : .white,
+                            tint: KTColor.onBackground
+                        ) {
+                            userInteractedWithControls()
+                            showAudioTrackMenu.toggle()
+                            if !showAudioTrackMenu {
+                                scheduleControlsAutoHide()
+                            }
+                        }
+                    }
                     volumeControl
                 }
                 .padding(.horizontal, KTSpacing.md)
@@ -355,10 +377,60 @@ struct StreamingPlayerView: View {
                         isPlaying = false
                     }
                 }
+                .onChange(of: vlcPlayer.audioTracks) { _, _ in
+                    refreshVLCAudioTracks()
+                }
+                .onChange(of: vlcPlayer.selectedAudioTrack?.id) { _, _ in
+                    refreshVLCAudioTracks()
+                }
         }
     }
 
     #endif
+
+    private var audioTrackMenu: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("AUDIO_TRACK")
+                .font(KTTypography.labelCaps())
+                .foregroundStyle(KTColor.onSurfaceVariant)
+                .tracking(1.1)
+                .padding(.horizontal, KTSpacing.sm)
+                .padding(.vertical, KTSpacing.xs)
+
+            ForEach(audioTrackOptions) { option in
+                Button {
+                    userInteractedWithControls()
+                    selectAudioTrack(id: option.id)
+                    showAudioTrackMenu = false
+                    scheduleControlsAutoHide()
+                } label: {
+                    HStack(spacing: KTSpacing.sm) {
+                        Text(option.label.uppercased())
+                            .font(KTTypography.technicalSM().weight(.bold))
+                            .foregroundStyle(KTColor.onBackground)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                        Spacer(minLength: KTSpacing.xs)
+                        if option.isSelected {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(KTColor.primary)
+                        }
+                    }
+                    .padding(.horizontal, KTSpacing.sm)
+                    .padding(.vertical, KTSpacing.sm)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(option.isSelected ? KTColor.tertiaryContainer : Color.white)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: 320, alignment: .leading)
+        .background(Color.white)
+        .thickBorder()
+        .hardShadow()
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
 
     private var playbackPlaceholder: some View {
         VStack(spacing: KTSpacing.sm) {
@@ -543,6 +615,11 @@ struct StreamingPlayerView: View {
     }
 
     private func handleCanvasTap() {
+        if showAudioTrackMenu {
+            showAudioTrackMenu = false
+            userInteractedWithControls()
+            return
+        }
         if controlsVisible {
             withAnimation(.easeInOut(duration: 0.25)) {
                 controlsVisible = false
@@ -553,6 +630,90 @@ struct StreamingPlayerView: View {
             scheduleControlsAutoHide()
         }
     }
+
+    private func selectAudioTrack(id: String) {
+        #if os(macOS) || os(iOS)
+        if let vlcPlayer, engine.usesEmbeddedVLC {
+            guard let track = vlcPlayer.audioTracks.first(where: { $0.id == id }) else { return }
+            vlcPlayer.selectedAudioTrack = track
+            refreshVLCAudioTracks()
+            return
+        }
+        guard let item = player?.currentItem,
+              let group = avAudibleGroup,
+              let index = Self.avTrackIndex(from: id),
+              group.options.indices.contains(index)
+        else { return }
+        item.select(group.options[index], in: group)
+        refreshAVAudioTracks()
+        #endif
+    }
+
+    #if os(macOS) || os(iOS)
+    private func refreshVLCAudioTracks() {
+        guard let vlcPlayer else {
+            audioTrackOptions = []
+            return
+        }
+        audioTrackOptions = vlcPlayer.audioTracks.enumerated().map { index, track in
+            AudioTrackOption(
+                id: track.id,
+                label: AudioTrackSelection.label(
+                    name: track.name,
+                    language: track.language,
+                    description: track.trackDescription,
+                    fallbackIndex: index + 1
+                ),
+                isSelected: track.isSelected
+            )
+        }
+        if !AudioTrackSelection.shouldShowPicker(trackCount: audioTrackOptions.count) {
+            showAudioTrackMenu = false
+        }
+    }
+
+    private func refreshAVAudioTracks() {
+        guard let item = player?.currentItem, let group = avAudibleGroup else {
+            audioTrackOptions = []
+            return
+        }
+        let selected = item.currentMediaSelection.selectedMediaOption(in: group)
+        audioTrackOptions = group.options.enumerated().map { index, option in
+            AudioTrackOption(
+                id: Self.avTrackID(index: index),
+                label: AudioTrackSelection.label(
+                    name: option.displayName,
+                    language: option.extendedLanguageTag
+                        ?? option.locale?.language.languageCode?.identifier,
+                    fallbackIndex: index + 1
+                ),
+                isSelected: option == selected
+            )
+        }
+        if !AudioTrackSelection.shouldShowPicker(trackCount: audioTrackOptions.count) {
+            showAudioTrackMenu = false
+        }
+    }
+
+    private func loadAVAudioTracks(for player: AVPlayer) async {
+        guard let item = player.currentItem else { return }
+        let group = try? await item.asset.loadMediaSelectionGroup(for: .audible)
+        await MainActor.run {
+            guard self.player === player else { return }
+            avAudibleGroup = group
+            refreshAVAudioTracks()
+        }
+    }
+
+    private static func avTrackID(index: Int) -> String {
+        "av-\(index)"
+    }
+
+    private static func avTrackIndex(from id: String) -> Int? {
+        guard id.hasPrefix("av-") else { return nil }
+        return Int(id.dropFirst(3))
+    }
+    #endif
 
     private func userInteractedWithControls() {
         showControls(animated: false)
@@ -570,14 +731,14 @@ struct StreamingPlayerView: View {
     }
 
     private func scheduleControlsAutoHide() {
-        guard isPlaying else { return }
+        guard isPlaying, !showAudioTrackMenu else { return }
         controlsHideToken = UUID()
     }
 
     private func runControlsAutoHide() async {
-        guard controlsVisible, isPlaying else { return }
+        guard controlsVisible, isPlaying, !showAudioTrackMenu else { return }
         try? await Task.sleep(for: .seconds(3))
-        guard !Task.isCancelled, controlsVisible, isPlaying else { return }
+        guard !Task.isCancelled, controlsVisible, isPlaying, !showAudioTrackMenu else { return }
         withAnimation(.easeInOut(duration: 0.25)) {
             controlsVisible = false
         }
@@ -677,6 +838,7 @@ struct StreamingPlayerView: View {
                     next.pause()
                     isPlaying = false
                 }
+                refreshVLCAudioTracks()
             } catch {
                 TPLog.error("SwiftVLC play failed: \(error.localizedDescription)")
                 isPlaying = false
@@ -694,6 +856,7 @@ struct StreamingPlayerView: View {
         } else {
             isPlaying = false
         }
+        Task { await loadAVAudioTracks(for: next) }
     }
 
     private func activatePlaybackAudioSessionIfNeeded() {
@@ -752,6 +915,9 @@ struct StreamingPlayerView: View {
         player = nil
         vlcPlayer?.stop()
         vlcPlayer = nil
+        avAudibleGroup = nil
+        audioTrackOptions = []
+        showAudioTrackMenu = false
         currentTime = 0
         duration = 0
         bufferedFraction = 0
