@@ -2,7 +2,7 @@
 //  LoadMagnetView.swift
 //  TorrentPlayer
 //
-//  Stub: design/load_magnet/
+//  design/load_magnet/
 //
 
 import SwiftData
@@ -80,8 +80,10 @@ struct LoadMagnetView: View {
                 awaitingStreamCard
 
                 HStack(spacing: KTSpacing.md) {
-                    statCard(label: "Network Load", value: "88.2", unit: "MB/S")
-                    statCard(label: "Connected", value: "412", unit: "PEERS", valueColor: KTColor.tertiary)
+                    let rate = PlaybackFormatting.rateParts(engine.downloadRateBytes)
+                    let peers = engine.peersConnected > 0 ? "\(engine.peersConnected)" : "—"
+                    statCard(label: "Network Load", value: rate.value, unit: rate.unit)
+                    statCard(label: "Connected", value: peers, unit: "PEERS", valueColor: KTColor.tertiary)
                 }
             }
             .padding(KTSpacing.md)
@@ -90,6 +92,12 @@ struct LoadMagnetView: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         .background(KTColor.background)
+        .task {
+            while !Task.isCancelled {
+                await engine.refreshDownloadStatus()
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
     }
 
     private var statusChipColors: (background: Color, foreground: Color) {

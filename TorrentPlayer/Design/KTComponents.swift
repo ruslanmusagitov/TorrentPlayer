@@ -2,7 +2,7 @@
 //  KTComponents.swift
 //  TorrentPlayer
 //
-//  Shared neo-brutalist UI primitives for Kinetic Torrent stubs.
+//  Shared neo-brutalist UI primitives for Kinetic Torrent screens.
 //
 
 import SwiftUI
@@ -260,6 +260,8 @@ struct MagnetURIEditor: NSViewRepresentable {
 #endif
 
 struct AppHeaderBar: View {
+    @State private var showSettings = false
+
     var body: some View {
         HStack {
             HStack(spacing: KTSpacing.xs) {
@@ -275,7 +277,7 @@ struct AppHeaderBar: View {
             }
             Spacer()
             Button {
-                // Settings stub
+                showSettings = true
             } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 22, weight: .semibold))
@@ -286,6 +288,7 @@ struct AppHeaderBar: View {
                     .hardShadow()
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Settings")
         }
         .padding(.horizontal, KTSpacing.md)
         .frame(height: KTSpacing.headerHeight)
@@ -300,6 +303,9 @@ struct AppHeaderBar: View {
         .padding(.trailing, KTSpacing.shadowOffset)
         .padding(.bottom, KTSpacing.shadowOffset)
         .zIndex(10)
+        .sheet(isPresented: $showSettings) {
+            SettingsSheetView()
+        }
     }
 }
 

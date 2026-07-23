@@ -11,7 +11,8 @@ import SwiftUI
 import AVFoundation
 import SwiftVLC
 #if os(macOS)
-import AVKit
+import AppKit
+import QuartzCore
 #else
 import UIKit
 #endif
@@ -20,19 +21,31 @@ import UIKit
 struct StreamingPlayerView: View {
     /// When false (another tab is visible), playback pauses but the player stays mounted.
     var isActive: Bool = true
+    /// Shared with the root shell so iOS can hide nav/header without remounting the video surface.
+    @Binding var isFullscreen: Bool
 
     @Environment(TorrentEngine.self) private var engine
     @State private var isPlaying = false
     @State private var currentTime: TimeInterval = 0
     @State private var duration: TimeInterval = 0
     @State private var bufferedFraction: Double = 0
+    @State private var volume: Float = 1.0
+    @State private var controlsVisible = true
+    @State private var controlsHideToken = UUID()
     #if os(macOS) || os(iOS)
     @State private var player: AVPlayer?
     @State private var vlcPlayer: Player?
     @State private var timeObserver: Any?
     @State private var endObserver: NSObjectProtocol?
+    /// Bumped after macOS window fullscreen so AV/VLC surfaces re-attach.
+    @State private var videoAttachID = 0
     #endif
     @Environment(\.horizontalSizeClass) private var sizeClass
+
+    init(isActive: Bool = true, isFullscreen: Binding<Bool> = .constant(false)) {
+        self.isActive = isActive
+        self._isFullscreen = isFullscreen
+    }
 
     private var statsColumnCount: Int {
         #if os(macOS)
@@ -54,7 +67,7 @@ struct StreamingPlayerView: View {
     }
 
     private var stats: [(label: String, value: String, color: Color)] {
-        let speed = formatRate(engine.downloadRateBytes)
+        let speed = PlaybackFormatting.formatRate(engine.downloadRateBytes)
         let peers = engine.peersConnected > 0 ? "\(engine.peersConnected)" : "—"
         let eta = PlaybackFormatting.etaClock(
             progress: engine.downloadProgress,
@@ -75,33 +88,61 @@ struct StreamingPlayerView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: KTSpacing.md) {
-                Text(titleText)
-                    .font(KTTypography.headlineLGMobile())
-                    .foregroundStyle(KTColor.onSecondary)
-                    .italic()
-                    .textCase(.uppercase)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(KTSpacing.sm)
-                    .background(KTColor.secondaryContainer)
-                    .thickBorder()
-                    .hardShadow()
+        GeometryReader { geo in
+            ScrollView {
+                VStack(alignment: .leading, spacing: KTSpacing.md) {
+                    if !isFullscreen {
+                        Text(titleText)
+                            .font(KTTypography.headlineLGMobile())
+                            .foregroundStyle(KTColor.onSecondary)
+                            .italic()
+                            .textCase(.uppercase)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(KTSpacing.sm)
+                            .background(KTColor.secondaryContainer)
+                            .thickBorder()
+                            .hardShadow()
+                    }
 
-                playerCanvas
-                progressSection
-                statsGrid
-                streamInfoCard
+                    playerCanvas
+                        // Keep one video surface: expand the same canvas instead of
+                        // fullScreenCover (that remounted AV/VLC and ate touch events).
+                        .aspectRatio(isFullscreen ? nil : 16 / 9, contentMode: .fit)
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: isFullscreen ? geo.size.height : nil,
+                            maxHeight: isFullscreen ? geo.size.height : nil
+                        )
+                        .thickBorder(isFullscreen ? .clear : KTColor.onBackground)
+
+                    if !isFullscreen {
+                        progressSection(overlayOnVideo: false)
+                        statsGrid
+                        streamInfoCard
+                    }
+                }
+                .padding(isFullscreen ? 0 : KTSpacing.md)
+                .frame(maxWidth: isFullscreen ? .infinity : 960, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(KTSpacing.md)
-            .frame(maxWidth: 960, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            // Prevent long labels / shadows from widening ScrollView content.
-            .fixedSize(horizontal: false, vertical: true)
+            .scrollDisabled(isFullscreen)
+            .background(isFullscreen ? Color.black : KTColor.background)
         }
-        .background(KTColor.background)
+        #if os(iOS)
+        .statusBarHidden(isFullscreen)
+        .persistentSystemOverlays(isFullscreen ? .hidden : .automatic)
+        #endif
+        #if os(macOS)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
+            reattachVideoAfterWindowFullscreen(note)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
+            reattachVideoAfterWindowFullscreen(note)
+        }
+        #endif
         #if os(macOS) || os(iOS)
         .task(id: engine.selectedFileID) {
             guard isActive, engine.selectedFileID != nil else { return }
@@ -126,7 +167,18 @@ struct StreamingPlayerView: View {
                 }
             } else {
                 pausePlayback()
+                isFullscreen = false
             }
+        }
+        .onChange(of: isPlaying) { _, playing in
+            if playing {
+                scheduleControlsAutoHide()
+            } else {
+                showControls(animated: true)
+            }
+        }
+        .task(id: controlsHideToken) {
+            await runControlsAutoHide()
         }
         #endif
     }
@@ -138,38 +190,34 @@ struct StreamingPlayerView: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             #if os(macOS) || os(iOS)
-            if let player, !engine.usesEmbeddedVLC {
-                BareVideoView(player: player)
-            } else if let vlcPlayer, engine.usesEmbeddedVLC {
-                VideoView(vlcPlayer)
-                    .onChange(of: vlcPlayer.currentTime) { _, time in
-                        currentTime = Self.seconds(from: time)
-                    }
-                    .onChange(of: vlcPlayer.duration) { _, mediaDuration in
-                        if let mediaDuration {
-                            duration = Self.seconds(from: mediaDuration)
-                        }
-                    }
-                    .onChange(of: vlcPlayer.bufferFill) { _, fill in
-                        bufferedFraction = Double(fill)
-                    }
-                    .onChange(of: vlcPlayer.isPlaybackRequestedActive) { _, active in
-                        isPlaying = active
-                    }
-                    .onChange(of: vlcPlayer.state) { _, state in
-                        if case .stopped = state, vlcPlayer.didReachEnd {
-                            isPlaying = false
-                        }
-                    }
+            if hasActivePlayer {
+                videoSurface
+                    .id(videoAttachID)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // UIViewRepresentable hosts often win hit-testing over SwiftUI controls.
+                    .allowsHitTesting(false)
             } else {
                 playbackPlaceholder
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             #else
             playbackPlaceholder
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             #endif
 
+            // Tap target under chrome — toggles / reveals controls without shifting layout.
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    handleCanvasTap()
+                }
+
+            // Keep chrome in the hierarchy (opacity only). Removing the VStack+Spacer
+            // collapses the ZStack to the video's intrinsic size and shrinks playback.
             VStack {
                 HStack {
                     Text(liveBadgeText)
@@ -179,24 +227,20 @@ struct StreamingPlayerView: View {
                         .padding(.vertical, 4)
                         .background(Color.black.opacity(0.55))
                     Spacer()
+                    // Top-right: stays visible on narrow phones where the bottom
+                    // transport row clips the fullscreen control past the volume bar.
+                    controlButton(
+                        systemImage: isFullscreen ? "xmark" : fullscreenButtonImage,
+                        fill: .white,
+                        tint: KTColor.onBackground
+                    ) {
+                        userInteractedWithControls()
+                        toggleFullscreen()
+                    }
                 }
                 .padding(KTSpacing.sm)
 
-                Spacer()
-
-                if showsCenterPlayOverlay {
-                    Button(action: togglePlayPause) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 48, weight: .bold))
-                            .foregroundStyle(KTColor.onPrimary)
-                            .frame(width: 96, height: 96)
-                            .background(KTColor.primary)
-                            .thickBorder()
-                            .hardShadow()
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
-                }
+                Spacer(minLength: 0)
 
                 HStack(spacing: KTSpacing.sm) {
                     controlButton(
@@ -204,44 +248,76 @@ struct StreamingPlayerView: View {
                         fill: KTColor.primaryContainer,
                         tint: KTColor.onPrimaryContainer
                     ) {
+                        userInteractedWithControls()
                         togglePlayPause()
                     }
                     controlButton(systemImage: "backward.fill", fill: .white, tint: KTColor.onBackground) {
+                        userInteractedWithControls()
                         skip(by: -10)
                     }
                     controlButton(systemImage: "forward.fill", fill: .white, tint: KTColor.onBackground) {
+                        userInteractedWithControls()
                         skip(by: 10)
                     }
-                    Spacer()
-                    HStack(spacing: KTSpacing.xs) {
-                        Text("VOL")
-                            .font(KTTypography.technicalSM())
-                        ZStack(alignment: .leading) {
-                            Rectangle().fill(KTColor.surfaceContainer)
-                            Rectangle()
-                                .fill(KTColor.tertiary)
-                                .frame(width: 72)
-                        }
-                        .frame(width: 96, height: 14)
-                        .overlay(Rectangle().strokeBorder(KTColor.onBackground, lineWidth: 1))
-                    }
-                    .padding(.horizontal, KTSpacing.sm)
-                    .padding(.vertical, KTSpacing.xs)
-                    .background(.white)
-                    .thickBorder()
+                    Spacer(minLength: KTSpacing.xs)
+                    volumeControl
                 }
-                .padding(KTSpacing.md)
+                .padding(.horizontal, KTSpacing.md)
+                .padding(.top, KTSpacing.md)
+                .padding(.bottom, isFullscreen ? KTSpacing.sm : KTSpacing.md)
+
+                if isFullscreen {
+                    progressSection(overlayOnVideo: true)
+                        .padding(.horizontal, KTSpacing.md)
+                        .padding(.bottom, KTSpacing.md)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .opacity(controlsVisible ? 1 : 0)
+            .allowsHitTesting(controlsVisible)
         }
-        .aspectRatio(16 / 9, contentMode: .fit)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeInOut(duration: 0.25), value: controlsVisible)
+    }
+
+    private var volumeControl: some View {
+        HStack(spacing: KTSpacing.xs) {
+            Text("VOL")
+                .font(KTTypography.technicalSM())
+            GeometryReader { geo in
+                let fillWidth = max(0, min(geo.size.width, CGFloat(volume) * geo.size.width))
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(KTColor.surfaceContainer)
+                    Rectangle()
+                        .fill(KTColor.tertiary)
+                        .frame(width: fillWidth)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(Rectangle().strokeBorder(KTColor.onBackground, lineWidth: 1))
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let next = Float(value.location.x / max(geo.size.width, 1))
+                            volume = min(1, max(0, next))
+                            applyVolume()
+                            userInteractedWithControls()
+                        }
+                )
+            }
+            .frame(width: volumeBarWidth, height: 14)
+        }
+        .padding(.horizontal, KTSpacing.sm)
+        .padding(.vertical, KTSpacing.xs)
+        .background(.white)
         .thickBorder()
     }
 
-    private var showsCenterPlayOverlay: Bool {
-        #if os(macOS) || os(iOS)
-        hasActivePlayer && !isPlaying && engine.playbackPhase == .ready
+    private var volumeBarWidth: CGFloat {
+        #if os(iOS)
+        sizeClass == .compact ? 56 : 96
         #else
-        false
+        96
         #endif
     }
 
@@ -253,6 +329,35 @@ struct StreamingPlayerView: View {
             player != nil
         }
     }
+
+    @ViewBuilder
+    private var videoSurface: some View {
+        if let player, !engine.usesEmbeddedVLC {
+            BareVideoView(player: player)
+        } else if let vlcPlayer, engine.usesEmbeddedVLC {
+            VideoView(vlcPlayer)
+                .onChange(of: vlcPlayer.currentTime) { _, time in
+                    currentTime = Self.seconds(from: time)
+                }
+                .onChange(of: vlcPlayer.duration) { _, mediaDuration in
+                    if let mediaDuration {
+                        duration = Self.seconds(from: mediaDuration)
+                    }
+                }
+                .onChange(of: vlcPlayer.bufferFill) { _, fill in
+                    bufferedFraction = Double(fill)
+                }
+                .onChange(of: vlcPlayer.isPlaybackRequestedActive) { _, active in
+                    isPlaying = active
+                }
+                .onChange(of: vlcPlayer.state) { _, state in
+                    if case .stopped = state, vlcPlayer.didReachEnd {
+                        isPlaying = false
+                    }
+                }
+        }
+    }
+
     #endif
 
     private var playbackPlaceholder: some View {
@@ -307,7 +412,7 @@ struct StreamingPlayerView: View {
         }
     }
 
-    private var progressSection: some View {
+    private func progressSection(overlayOnVideo: Bool) -> some View {
         VStack(alignment: .leading, spacing: KTSpacing.xs) {
             HStack {
                 Text(PlaybackFormatting.clock(seconds: duration > 0 ? currentTime : nil))
@@ -320,6 +425,7 @@ struct StreamingPlayerView: View {
             }
             .font(KTTypography.technicalMD().weight(.bold))
             .textCase(.uppercase)
+            .foregroundStyle(overlayOnVideo ? Color.white : KTColor.onBackground)
             .frame(maxWidth: .infinity)
 
             GeometryReader { geo in
@@ -348,16 +454,21 @@ struct StreamingPlayerView: View {
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0)
+                        .onChanged { _ in
+                            userInteractedWithControls()
+                        }
                         .onEnded { value in
                             guard duration > 0, geo.size.width > 0 else { return }
                             let fraction = min(1, max(0, value.location.x / geo.size.width))
                             seek(to: duration * Double(fraction))
+                            userInteractedWithControls()
                         }
                 )
             }
             .frame(height: 32)
             .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity)
     }
 
     private var statsGrid: some View {
@@ -410,13 +521,78 @@ struct StreamingPlayerView: View {
         """
     }
 
-    private func formatRate(_ bytesPerSecond: Double) -> String {
-        guard bytesPerSecond > 0 else { return "—" }
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        formatter.allowedUnits = [.useKB, .useMB, .useGB]
-        return formatter.string(fromByteCount: Int64(bytesPerSecond)) + "/s"
+    private var fullscreenButtonImage: String {
+        isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
     }
+
+    private func applyVolume() {
+        #if os(macOS) || os(iOS)
+        player?.volume = volume
+        if let vlcPlayer {
+            try? vlcPlayer.setAudioVolume(Volume(volume))
+        }
+        #endif
+    }
+
+    private func toggleFullscreen() {
+        // In-app expand of the player canvas (same surface). Do not use
+        // NSWindow.toggleFullScreen — that fullscreen the whole app chrome.
+        isFullscreen.toggle()
+        showControls(animated: true)
+        scheduleControlsAutoHide()
+    }
+
+    private func handleCanvasTap() {
+        if controlsVisible {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                controlsVisible = false
+            }
+            controlsHideToken = UUID()
+        } else {
+            showControls(animated: true)
+            scheduleControlsAutoHide()
+        }
+    }
+
+    private func userInteractedWithControls() {
+        showControls(animated: false)
+        scheduleControlsAutoHide()
+    }
+
+    private func showControls(animated: Bool) {
+        if animated {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                controlsVisible = true
+            }
+        } else {
+            controlsVisible = true
+        }
+    }
+
+    private func scheduleControlsAutoHide() {
+        guard isPlaying else { return }
+        controlsHideToken = UUID()
+    }
+
+    private func runControlsAutoHide() async {
+        guard controlsVisible, isPlaying else { return }
+        try? await Task.sleep(for: .seconds(3))
+        guard !Task.isCancelled, controlsVisible, isPlaying else { return }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            controlsVisible = false
+        }
+    }
+
+    #if os(macOS)
+    private func reattachVideoAfterWindowFullscreen(_ note: Notification) {
+        guard isActive, hasActivePlayer else { return }
+        guard (note.object as? NSWindow) === NSApp.keyWindow else { return }
+        // VLC drawable and AVPlayerLayer both need a fresh host after Space switch.
+        DispatchQueue.main.async {
+            videoAttachID += 1
+        }
+    }
+    #endif
 
     private func togglePlayPause() {
         #if os(macOS) || os(iOS)
@@ -494,6 +670,7 @@ struct StreamingPlayerView: View {
                     next.isMuted = true
                 }
                 try next.play(url: url)
+                try? next.setAudioVolume(Volume(volume))
                 if isActive {
                     isPlaying = true
                 } else {
@@ -508,6 +685,7 @@ struct StreamingPlayerView: View {
         }
 
         let next = AVPlayer(url: url)
+        next.volume = volume
         player = next
         attachObservers(to: next)
         if isActive {
@@ -633,22 +811,97 @@ struct StreamingPlayerView: View {
 }
 
 #if os(macOS)
-/// AVPlayer surface without system chrome so Kinetic controls stay visible.
+/// AVPlayerLayer host — AVPlayerView often goes black (audio OK) after
+/// `NSWindow.toggleFullScreen` when embedded via SwiftUI representable.
 private struct BareVideoView: NSViewRepresentable {
     let player: AVPlayer
 
-    func makeNSView(context: Context) -> AVPlayerView {
-        let view = AVPlayerView()
-        view.controlsStyle = .none
-        view.videoGravity = .resizeAspect
+    func makeNSView(context: Context) -> PlayerLayerNSView {
+        let view = PlayerLayerNSView()
         view.player = player
         return view
     }
 
-    func updateNSView(_ nsView: AVPlayerView, context: Context) {
-        if nsView.player !== player {
-            nsView.player = player
+    func updateNSView(_ nsView: PlayerLayerNSView, context: Context) {
+        nsView.player = player
+    }
+}
+
+private final class PlayerLayerNSView: NSView {
+    private let playerLayer = AVPlayerLayer()
+    private var fullscreenObservers: [NSObjectProtocol] = []
+
+    var player: AVPlayer? {
+        get { playerLayer.player }
+        set {
+            playerLayer.player = newValue
+            playerLayer.videoGravity = .resizeAspect
         }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layerAddsPlayer()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        removeFullscreenObservers()
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        playerLayer.frame = bounds
+        CATransaction.commit()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        removeFullscreenObservers()
+        guard let window else { return }
+        let refresh: (Notification) -> Void = { [weak self] _ in
+            // Bounds are often still stale in the notification callback.
+            DispatchQueue.main.async {
+                self?.refreshVideoSurface()
+            }
+        }
+        let center = NotificationCenter.default
+        fullscreenObservers = [
+            center.addObserver(forName: NSWindow.didEnterFullScreenNotification, object: window, queue: .main, using: refresh),
+            center.addObserver(forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main, using: refresh),
+        ]
+        refreshVideoSurface()
+    }
+
+    private func layerAddsPlayer() {
+        guard let host = layer else { return }
+        playerLayer.videoGravity = .resizeAspect
+        if playerLayer.superlayer !== host {
+            host.addSublayer(playerLayer)
+        }
+        playerLayer.frame = bounds
+    }
+
+    private func refreshVideoSurface() {
+        layerAddsPlayer()
+        // Re-bind so the compositor picks up the layer after Space / fullscreen changes.
+        guard let current = playerLayer.player else { return }
+        playerLayer.player = nil
+        playerLayer.player = current
+    }
+
+    private func removeFullscreenObservers() {
+        let center = NotificationCenter.default
+        for observer in fullscreenObservers {
+            center.removeObserver(observer)
+        }
+        fullscreenObservers.removeAll()
     }
 }
 #elseif os(iOS)
@@ -671,12 +924,37 @@ private final class PlayerLayerView: UIView {
     override class var layerClass: AnyClass { AVPlayerLayer.self }
 
     private var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+    private var pendingPlayer: AVPlayer?
 
     var player: AVPlayer? {
-        get { playerLayer.player }
+        get { playerLayer.player ?? pendingPlayer }
         set {
-            playerLayer.player = newValue
-            playerLayer.videoGravity = .resizeAspect
+            pendingPlayer = newValue
+            attachPlayerIfReady()
+        }
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        backgroundColor = .black
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        playerLayer.frame = bounds
+        attachPlayerIfReady()
+    }
+
+    private func attachPlayerIfReady() {
+        guard bounds.width > 1, bounds.height > 1 else { return }
+        playerLayer.videoGravity = .resizeAspect
+        if playerLayer.player !== pendingPlayer {
+            playerLayer.player = pendingPlayer
         }
     }
 }

@@ -87,6 +87,8 @@ final class TorrentEngine {
     private var resumePersistTask: Task<Void, Never>?
     private var lastResumePersistAt: ContinuousClock.Instant?
     private var lastPersistedPiecesCompleted: Int = -1
+    /// Cleared by Settings → Clear Resume until the next torrent load restarts persistence.
+    private var resumePersistenceEnabled = true
     #endif
 
     private let metadataTimeoutSeconds: Int
@@ -278,6 +280,7 @@ final class TorrentEngine {
             lastResumePersistAt = nil
             phase = .loaded(torrent)
             await applySequentialPriorityForSelection()
+            resumePersistenceEnabled = true
             await persistResumeIfNeeded(force: true)
             startResumePersistLoop()
         } catch let error as TorrentEngineError {
@@ -490,6 +493,7 @@ final class TorrentEngine {
     /// Save resume data for the active torrent (throttled unless `force`).
     func persistResumeIfNeeded(force: Bool = false) async {
         #if os(macOS) || os(iOS)
+        guard resumePersistenceEnabled else { return }
         guard let handle = activeHandle, let infoHash = activeInfoHash else { return }
 
         let now = ContinuousClock.now
@@ -517,6 +521,7 @@ final class TorrentEngine {
     #if os(macOS) || os(iOS)
     private func startResumePersistLoop() {
         stopResumePersistLoop()
+        resumePersistenceEnabled = true
         resumePersistTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.resumePersistInterval)
@@ -630,6 +635,112 @@ final class TorrentEngine {
 
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base
+    }
+
+    static func logsDirectory() throws -> URL {
+        let base = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ).appendingPathComponent("TorrentPlayer/Logs", isDirectory: true)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base
+    }
+
+    static func downloadsDiskUsageBytes() -> Int64 {
+        guard let dir = try? downloadsDirectory() else { return 0 }
+        return directoryByteSize(at: dir)
+    }
+
+    /// Stops playback, removes the active torrent from the session, and deletes Downloads contents.
+    /// Also wipes Resume/ so the next magnet load cannot restore phantom completed pieces.
+    func clearDownloads() async throws {
+        #if os(macOS) || os(iOS)
+        stopResumePersistLoop()
+        resumePersistenceEnabled = false
+        stopPlayback()
+        if let session, let infoHash = activeInfoHash {
+            await session.removeTorrent(infoHash)
+        }
+        activeHandle = nil
+        activeInfoHash = nil
+        #else
+        stopPlayback()
+        #endif
+
+        activeTorrent = nil
+        selectedFileID = nil
+        lastMagnetURI = nil
+        downloadProgress = 0
+        downloadRateBytes = 0
+        peersConnected = 0
+        piecesCompleted = 0
+        piecesTotal = 0
+        #if os(macOS) || os(iOS)
+        if session != nil {
+            phase = .ready
+        }
+        #endif
+
+        let dir = try Self.downloadsDirectory()
+        try Self.removeContents(of: dir)
+        #if os(macOS) || os(iOS)
+        try wipeResumeDirectory()
+        #endif
+        TPLog.engine("cleared downloads at \(dir.path)")
+    }
+
+    /// Deletes all resume `.dat` files under Application Support/TorrentPlayer/Resume.
+    /// Stops persistence so an active torrent cannot rewrite resume within ~5s.
+    func clearResumeData() throws {
+        #if os(macOS) || os(iOS)
+        stopResumePersistLoop()
+        resumePersistenceEnabled = false
+        try wipeResumeDirectory()
+        TPLog.engine("cleared resume data")
+        #endif
+    }
+
+    #if os(macOS) || os(iOS)
+    private func wipeResumeDirectory() throws {
+        let dir = try Self.resumeDirectory()
+        try Self.removeContents(of: dir)
+        lastResumePersistAt = nil
+        lastPersistedPiecesCompleted = -1
+    }
+    #endif
+
+    private static func removeContents(of directory: URL) throws {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: directory.path) else { return }
+        let items = try fm.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        for item in items {
+            try fm.removeItem(at: item)
+        }
+    }
+
+    private static func directoryByteSize(at url: URL) -> Int64 {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: url,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return 0 }
+
+        var total: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            guard let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+                  values.isRegularFile == true,
+                  let size = values.fileSize
+            else { continue }
+            total += Int64(size)
+        }
+        return total
     }
 
     #if os(macOS) || os(iOS)

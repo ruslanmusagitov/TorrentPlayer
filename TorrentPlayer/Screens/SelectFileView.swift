@@ -10,9 +10,26 @@ import SwiftUI
 struct SelectFileView: View {
     @Environment(TorrentEngine.self) private var engine
     var onStream: (() -> Void)?
+    @State private var sortMode: FileSortMode = .name
 
     private var files: [TorrentFileItem] {
-        engine.activeTorrent?.files ?? []
+        let raw = engine.activeTorrent?.files ?? []
+        switch sortMode {
+        case .name:
+            return raw.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+        case .size:
+            return raw.sorted { $0.size > $1.size }
+        case .type:
+            return raw.sorted {
+                let l = ($0.name as NSString).pathExtension
+                let r = ($1.name as NSString).pathExtension
+                let ext = l.localizedCaseInsensitiveCompare(r)
+                if ext != .orderedSame { return ext == .orderedAscending }
+                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+        }
     }
 
     private var hasVideoSelection: Bool {
@@ -67,14 +84,20 @@ struct SelectFileView: View {
                     .textCase(.uppercase)
                     .tracking(1.1)
                 Spacer()
-                HStack(spacing: 4) {
-                    Text("Sort by:")
-                        .font(KTTypography.technicalSM())
-                        .opacity(0.7)
-                    Text("Name")
-                        .font(KTTypography.technicalSM())
-                        .underline()
+                Button {
+                    sortMode = sortMode.next
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Sort by:")
+                            .font(KTTypography.technicalSM())
+                            .opacity(0.7)
+                        Text(sortMode.label)
+                            .font(KTTypography.technicalSM())
+                            .underline()
+                    }
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Sort by \(sortMode.label)")
             }
 
             fileList
@@ -227,6 +250,28 @@ struct SelectFileView: View {
             return "photo"
         default:
             return "doc.text"
+        }
+    }
+}
+
+private enum FileSortMode: CaseIterable {
+    case name
+    case size
+    case type
+
+    var label: String {
+        switch self {
+        case .name: "Name"
+        case .size: "Size"
+        case .type: "Type"
+        }
+    }
+
+    var next: FileSortMode {
+        switch self {
+        case .name: .size
+        case .size: .type
+        case .type: .name
         }
     }
 }
