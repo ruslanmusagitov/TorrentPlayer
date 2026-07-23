@@ -122,7 +122,7 @@ struct SplashScreenView: View {
                         .frame(width: max(0, geo.size.width * bootProgress))
                 }
 
-                HazardStripes()
+                HazardStripes(showsBackground: false)
                     .opacity(0.12)
             }
             .frame(height: 32)
