@@ -93,6 +93,7 @@ struct StreamingPlayerView: View {
 
     var body: some View {
         GeometryReader { geo in
+            let contentWidth = isFullscreen ? geo.size.width : min(960, geo.size.width)
             ScrollView {
                 VStack(alignment: .leading, spacing: KTSpacing.md) {
                     if !isFullscreen {
@@ -120,6 +121,7 @@ struct StreamingPlayerView: View {
                             maxHeight: isFullscreen ? geo.size.height : nil
                         )
                         .thickBorder(isFullscreen ? .clear : KTColor.onBackground)
+                        .clipped()
 
                     if !isFullscreen {
                         progressSection(overlayOnVideo: false)
@@ -128,8 +130,9 @@ struct StreamingPlayerView: View {
                     }
                 }
                 .padding(isFullscreen ? 0 : KTSpacing.md)
-                .frame(maxWidth: isFullscreen ? .infinity : 960, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Explicit width stops long titles / STREAM_INFO from inflating
+                // ScrollView ideal width and clipping the trailing edge on iPhone.
+                .frame(width: contentWidth, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
             }
             .scrollDisabled(isFullscreen)
@@ -252,7 +255,7 @@ struct StreamingPlayerView: View {
                         .padding(.bottom, KTSpacing.xs)
                 }
 
-                HStack(spacing: KTSpacing.sm) {
+                HStack(spacing: transportSpacing) {
                     controlButton(
                         systemImage: isPlaying ? "pause.fill" : "play.fill",
                         fill: KTColor.primaryContainer,
@@ -269,7 +272,7 @@ struct StreamingPlayerView: View {
                         userInteractedWithControls()
                         skip(by: 10)
                     }
-                    Spacer(minLength: KTSpacing.xs)
+                    Spacer(minLength: 0)
                     if AudioTrackSelection.shouldShowPicker(trackCount: audioTrackOptions.count) {
                         controlButton(
                             systemImage: "waveform",
@@ -280,10 +283,11 @@ struct StreamingPlayerView: View {
                         }
                     }
                     volumeControl
+                        .layoutPriority(1)
                 }
-                .padding(.horizontal, KTSpacing.md)
-                .padding(.top, KTSpacing.md)
-                .padding(.bottom, isFullscreen ? KTSpacing.sm : KTSpacing.md)
+                .padding(.horizontal, transportPadding)
+                .padding(.vertical, KTSpacing.sm)
+                .frame(maxWidth: .infinity)
 
                 if isFullscreen {
                     progressSection(overlayOnVideo: true)
@@ -301,8 +305,11 @@ struct StreamingPlayerView: View {
 
     private var volumeControl: some View {
         HStack(spacing: KTSpacing.xs) {
-            Text("VOL")
-                .font(KTTypography.technicalSM())
+            if showsVolumeLabel {
+                Text("VOL")
+                    .font(KTTypography.technicalSM())
+                    .fixedSize()
+            }
             GeometryReader { geo in
                 let fillWidth = max(0, min(geo.size.width, CGFloat(volume) * geo.size.width))
                 ZStack(alignment: .leading) {
@@ -326,18 +333,36 @@ struct StreamingPlayerView: View {
             }
             .frame(width: volumeBarWidth, height: 14)
         }
-        .padding(.horizontal, KTSpacing.sm)
+        .padding(.horizontal, showsVolumeLabel ? KTSpacing.sm : KTSpacing.xs)
         .padding(.vertical, KTSpacing.xs)
         .background(.white)
         .thickBorder()
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityLabel("Volume")
+    }
+
+    private var isCompactTransport: Bool {
+        #if os(iOS)
+        sizeClass == .compact
+        #else
+        false
+        #endif
+    }
+
+    private var transportSpacing: CGFloat {
+        isCompactTransport ? KTSpacing.xs : KTSpacing.sm
+    }
+
+    private var transportPadding: CGFloat {
+        isCompactTransport ? KTSpacing.xs : KTSpacing.md
+    }
+
+    private var showsVolumeLabel: Bool {
+        !isCompactTransport
     }
 
     private var volumeBarWidth: CGFloat {
-        #if os(iOS)
-        sizeClass == .compact ? 56 : 96
-        #else
-        96
-        #endif
+        isCompactTransport ? 40 : 96
     }
 
     #if os(macOS) || os(iOS)
@@ -567,6 +592,8 @@ struct StreamingPlayerView: View {
             Text(streamInfoText)
             .font(KTTypography.technicalSM())
             .foregroundStyle(KTColor.onSurfaceVariant)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .padding(KTSpacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -990,11 +1017,12 @@ struct StreamingPlayerView: View {
         tint: Color,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        let side: CGFloat = isCompactTransport ? 36 : 44
+        return Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 20, weight: .bold))
+                .font(.system(size: isCompactTransport ? 17 : 20, weight: .bold))
                 .foregroundStyle(tint)
-                .frame(width: 44, height: 44)
+                .frame(width: side, height: side)
                 .background(fill)
                 .thickBorder()
                 .hardShadow()
