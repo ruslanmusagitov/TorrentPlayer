@@ -1,0 +1,312 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="24765" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="01J-lp-oVM">
+    <device id="retina6_12" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="24743"/>
+        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <scenes>
+        <!--View Controller-->
+        <scene sceneID="EHf-IW-A2E">
+            <objects>
+                <viewController id="01J-lp-oVM" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="Ze5-6b-2t3">
+                        <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="card-shadow" userLabel="Card Shadow">
+                                <rect key="frame" x="24" y="142" width="361" height="634"/>
+                                <color key="backgroundColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                            </view>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="card-border" userLabel="Card Border">
+                                <rect key="frame" x="16" y="134" width="361" height="634"/>
+                                <subviews>
+                                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="card-bg" userLabel="Card Fill">
+                                        <rect key="frame" x="3" y="3" width="355" height="628"/>
+                                        <subviews>
+                                            <stackView opaque="NO" contentMode="scaleToFill" distribution="equalSpacing" alignment="top" translatesAutoresizingMaskIntoConstraints="NO" id="header-row">
+                                                <rect key="frame" x="40" y="40" width="275" height="50"/>
+                                                <subviews>
+                                                    <stackView opaque="NO" contentMode="scaleToFill" spacing="8" translatesAutoresizingMaskIntoConstraints="NO" id="swatches">
+                                                        <rect key="frame" x="0.0" y="0.0" width="64" height="16"/>
+                                                        <subviews>
+                                                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="sw1-border">
+                                                                <rect key="frame" x="0.0" y="0.0" width="16" height="16"/>
+                                                                <subviews>
+                                                                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="swatch-primary">
+                                                                        <rect key="frame" x="2" y="2" width="12" height="12"/>
+                                                                        <color key="backgroundColor" red="0.62745098040000002" green="0.25490196079999999" blue="0.0" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                                    </view>
+                                                                </subviews>
+                                                                <color key="backgroundColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                                <constraints>
+                                                                    <constraint firstAttribute="height" constant="16" id="sw1-h"/>
+                                                                    <constraint firstAttribute="bottom" secondItem="swatch-primary" secondAttribute="bottom" constant="2" id="sw1-ib"/>
+                                                                    <constraint firstItem="swatch-primary" firstAttribute="leading" secondItem="sw1-border" secondAttribute="leading" constant="2" id="sw1-il"/>
+                                                                    <constraint firstAttribute="trailing" secondItem="swatch-primary" secondAttribute="trailing" constant="2" id="sw1-ir"/>
+                                                                    <constraint firstItem="swatch-primary" firstAttribute="top" secondItem="sw1-border" secondAttribute="top" constant="2" id="sw1-it"/>
+                                                                    <constraint firstAttribute="width" constant="16" id="sw1-w"/>
+                                                                </constraints>
+                                                            </view>
+                                                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="sw2-border">
+                                                                <rect key="frame" x="24" y="0.0" width="16" height="16"/>
+                                                                <subviews>
+                                                                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="swatch-tertiary">
+                                                                        <rect key="frame" x="2" y="2" width="12" height="12"/>
+                                                                        <color key="backgroundColor" red="0.31372549020000001" green="0.40000000000000002" blue="0.0" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                                    </view>
+                                                                </subviews>
+                                                                <color key="backgroundColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                                <constraints>
+                                                                    <constraint firstAttribute="height" constant="16" id="sw2-h"/>
+                                                                    <constraint firstAttribute="bottom" secondItem="swatch-tertiary" secondAttribute="bottom" constant="2" id="sw2-ib"/>
+                                                                    <constraint firstItem="swatch-tertiary" firstAttribute="leading" secondItem="sw2-border" secondAttribute="leading" constant="2" id="sw2-il"/>
+                                                                    <constraint firstAttribute="trailing" secondItem="swatch-tertiary" secondAttribute="trailing" constant="2" id="sw2-ir"/>
+                                                                    <constraint firstItem="swatch-tertiary" firstAttribute="top" secondItem="sw2-border" secondAttribute="top" constant="2" id="sw2-it"/>
+                                                                    <constraint firstAttribute="width" constant="16" id="sw2-w"/>
+                                                                </constraints>
+                                                            </view>
+                                                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="sw3-border">
+                                                                <rect key="frame" x="48" y="0.0" width="16" height="16"/>
+                                                                <subviews>
+                                                                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="swatch-secondary">
+                                                                        <rect key="frame" x="2" y="2" width="12" height="12"/>
+                                                                        <color key="backgroundColor" red="0.0" green="0.0039215686269999999" blue="0.75294117650000003" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                                    </view>
+                                                                </subviews>
+                                                                <color key="backgroundColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                                <constraints>
+                                                                    <constraint firstAttribute="height" constant="16" id="sw3-h"/>
+                                                                    <constraint firstAttribute="bottom" secondItem="swatch-secondary" secondAttribute="bottom" constant="2" id="sw3-ib"/>
+                                                                    <constraint firstItem="swatch-secondary" firstAttribute="leading" secondItem="sw3-border" secondAttribute="leading" constant="2" id="sw3-il"/>
+                                                                    <constraint firstAttribute="trailing" secondItem="swatch-secondary" secondAttribute="trailing" constant="2" id="sw3-ir"/>
+                                                                    <constraint firstItem="swatch-secondary" firstAttribute="top" secondItem="sw3-border" secondAttribute="top" constant="2" id="sw3-it"/>
+                                                                    <constraint firstAttribute="width" constant="16" id="sw3-w"/>
+                                                                </constraints>
+                                                            </view>
+                                                        </subviews>
+                                                    </stackView>
+                                                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="version-border">
+                                                        <rect key="frame" x="177" y="0.0" width="98" height="50"/>
+                                                        <subviews>
+                                                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="version-box">
+                                                                <rect key="frame" x="2" y="2" width="94" height="46"/>
+                                                                <subviews>
+                                                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="v.1.0_STABLE" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" translatesAutoresizingMaskIntoConstraints="NO" id="version-label">
+                                                                        <rect key="frame" x="8" y="3" width="78" height="40"/>
+                                                                        <fontDescription key="fontDescription" name="Menlo-Regular" family="Menlo" pointSize="10"/>
+                                                                        <color key="textColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                                    </label>
+                                                                </subviews>
+                                                                <color key="backgroundColor" red="0.8862745098" green="0.8862745098" blue="0.8862745098" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                                <constraints>
+                                                                    <constraint firstAttribute="bottom" secondItem="version-label" secondAttribute="bottom" constant="3" id="vb-b"/>
+                                                                    <constraint firstItem="version-label" firstAttribute="leading" secondItem="version-box" secondAttribute="leading" constant="8" id="vb-l"/>
+                                                                    <constraint firstAttribute="trailing" secondItem="version-label" secondAttribute="trailing" constant="8" id="vb-r"/>
+                                                                    <constraint firstItem="version-label" firstAttribute="top" secondItem="version-box" secondAttribute="top" constant="3" id="vb-t"/>
+                                                                </constraints>
+                                                            </view>
+                                                        </subviews>
+                                                        <color key="backgroundColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                        <constraints>
+                                                            <constraint firstAttribute="bottom" secondItem="version-box" secondAttribute="bottom" constant="2" id="vbb-b"/>
+                                                            <constraint firstItem="version-box" firstAttribute="leading" secondItem="version-border" secondAttribute="leading" constant="2" id="vbb-l"/>
+                                                            <constraint firstAttribute="trailing" secondItem="version-box" secondAttribute="trailing" constant="2" id="vbb-r"/>
+                                                            <constraint firstItem="version-box" firstAttribute="top" secondItem="version-border" secondAttribute="top" constant="2" id="vbb-t"/>
+                                                        </constraints>
+                                                    </view>
+                                                </subviews>
+                                            </stackView>
+                                            <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" alignment="center" spacing="16" translatesAutoresizingMaskIntoConstraints="NO" id="brand-stack">
+                                                <rect key="frame" x="45" y="178.66666666666666" width="265" height="270.66666666666674"/>
+                                                <subviews>
+                                                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="icon-wrap">
+                                                        <rect key="frame" x="86.666666666666657" y="0.0" width="92" height="92"/>
+                                                        <subviews>
+                                                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="icon-shadow">
+                                                                <rect key="frame" x="8" y="8" width="84" height="84"/>
+                                                                <color key="backgroundColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                            </view>
+                                                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="icon-border">
+                                                                <rect key="frame" x="0.0" y="0.0" width="84" height="84"/>
+                                                                <subviews>
+                                                                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="icon-box">
+                                                                        <rect key="frame" x="3" y="3" width="78" height="78"/>
+                                                                        <subviews>
+                                                                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="gauge.with.dots.needle.67percent" catalog="system" translatesAutoresizingMaskIntoConstraints="NO" id="gauge-icon">
+                                                                                <rect key="frame" x="13" y="13.666666666666668" width="52" height="50.666666666666657"/>
+                                                                                <color key="tintColor" red="0.16078431369999999" green="0.21176470589999999" blue="0.0" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                                            </imageView>
+                                                                        </subviews>
+                                                                        <color key="backgroundColor" red="0.51372549020000002" green="0.64705882349999999" blue="0.0" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                                        <constraints>
+                                                                            <constraint firstItem="gauge-icon" firstAttribute="centerX" secondItem="icon-box" secondAttribute="centerX" id="gi-cx"/>
+                                                                            <constraint firstItem="gauge-icon" firstAttribute="centerY" secondItem="icon-box" secondAttribute="centerY" id="gi-cy"/>
+                                                                            <constraint firstItem="gauge-icon" firstAttribute="height" constant="52" id="gi-h"/>
+                                                                            <constraint firstItem="gauge-icon" firstAttribute="width" constant="52" id="gi-w"/>
+                                                                        </constraints>
+                                                                    </view>
+                                                                </subviews>
+                                                                <color key="backgroundColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                                <constraints>
+                                                                    <constraint firstAttribute="bottom" secondItem="icon-box" secondAttribute="bottom" constant="3" id="ib-ib"/>
+                                                                    <constraint firstItem="icon-box" firstAttribute="leading" secondItem="icon-border" secondAttribute="leading" constant="3" id="ib-il"/>
+                                                                    <constraint firstAttribute="trailing" secondItem="icon-box" secondAttribute="trailing" constant="3" id="ib-ir"/>
+                                                                    <constraint firstItem="icon-box" firstAttribute="top" secondItem="icon-border" secondAttribute="top" constant="3" id="ib-it"/>
+                                                                    <constraint firstAttribute="height" constant="84" id="icon-h"/>
+                                                                    <constraint firstAttribute="width" constant="84" id="icon-w"/>
+                                                                </constraints>
+                                                            </view>
+                                                        </subviews>
+                                                        <constraints>
+                                                            <constraint firstItem="icon-border" firstAttribute="leading" secondItem="icon-wrap" secondAttribute="leading" id="ibr-l"/>
+                                                            <constraint firstItem="icon-border" firstAttribute="top" secondItem="icon-wrap" secondAttribute="top" id="ibr-t"/>
+                                                            <constraint firstItem="icon-shadow" firstAttribute="height" constant="84" id="is-h"/>
+                                                            <constraint firstItem="icon-shadow" firstAttribute="leading" secondItem="icon-wrap" secondAttribute="leading" constant="8" id="is-l"/>
+                                                            <constraint firstItem="icon-shadow" firstAttribute="top" secondItem="icon-wrap" secondAttribute="top" constant="8" id="is-t"/>
+                                                            <constraint firstItem="icon-shadow" firstAttribute="width" constant="84" id="is-w"/>
+                                                            <constraint firstAttribute="height" constant="92" id="iw-h"/>
+                                                            <constraint firstAttribute="width" constant="92" id="iw-w"/>
+                                                        </constraints>
+                                                    </view>
+                                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" textAlignment="center" lineBreakMode="tailTruncation" numberOfLines="2" baselineAdjustment="alignBaselines" translatesAutoresizingMaskIntoConstraints="NO" id="title-label">
+                                                        <rect key="frame" x="31.333333333333329" y="108" width="202.33333333333337" height="96.666666666666686"/>
+                                                        <string key="text">TORRENT
+PLAYER</string>
+                                                        <fontDescription key="fontDescription" pointSize="42"/>
+                                                        <color key="textColor" red="0.62745098040000002" green="0.25490196079999999" blue="0.0" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                    </label>
+                                                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="tagline-box">
+                                                        <rect key="frame" x="0.0" y="220.66666666666669" width="265" height="50"/>
+                                                        <subviews>
+                                                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="HIGH SPEED P2P STREAMING ENGINE" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" translatesAutoresizingMaskIntoConstraints="NO" id="tagline-label">
+                                                                <rect key="frame" x="16" y="8" width="233" height="34"/>
+                                                                <fontDescription key="fontDescription" name="Menlo-Bold" family="Menlo" pointSize="9"/>
+                                                                <color key="textColor" red="0.97647058819999999" green="0.97647058819999999" blue="0.97647058819999999" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                            </label>
+                                                        </subviews>
+                                                        <color key="backgroundColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                        <constraints>
+                                                            <constraint firstAttribute="bottom" secondItem="tagline-label" secondAttribute="bottom" constant="8" id="tl-b"/>
+                                                            <constraint firstItem="tagline-label" firstAttribute="leading" secondItem="tagline-box" secondAttribute="leading" constant="16" id="tl-l"/>
+                                                            <constraint firstAttribute="trailing" secondItem="tagline-label" secondAttribute="trailing" constant="16" id="tl-r"/>
+                                                            <constraint firstItem="tagline-label" firstAttribute="top" secondItem="tagline-box" secondAttribute="top" constant="8" id="tl-t"/>
+                                                        </constraints>
+                                                    </view>
+                                                </subviews>
+                                            </stackView>
+                                            <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" spacing="8" translatesAutoresizingMaskIntoConstraints="NO" id="status-stack">
+                                                <rect key="frame" x="40" y="520.33333333333337" width="275" height="67.666666666666629"/>
+                                                <subviews>
+                                                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="progress-border">
+                                                        <rect key="frame" x="0.0" y="0.0" width="275" height="32"/>
+                                                        <subviews>
+                                                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="progress-track">
+                                                                <rect key="frame" x="3" y="3" width="269" height="26"/>
+                                                                <color key="backgroundColor" red="0.8862745098" green="0.8862745098" blue="0.8862745098" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                            </view>
+                                                        </subviews>
+                                                        <color key="backgroundColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                        <constraints>
+                                                            <constraint firstAttribute="height" constant="32" id="prog-h"/>
+                                                            <constraint firstAttribute="bottom" secondItem="progress-track" secondAttribute="bottom" constant="3" id="pt-b"/>
+                                                            <constraint firstItem="progress-track" firstAttribute="leading" secondItem="progress-border" secondAttribute="leading" constant="3" id="pt-l"/>
+                                                            <constraint firstAttribute="trailing" secondItem="progress-track" secondAttribute="trailing" constant="3" id="pt-r"/>
+                                                            <constraint firstItem="progress-track" firstAttribute="top" secondItem="progress-border" secondAttribute="top" constant="3" id="pt-t"/>
+                                                        </constraints>
+                                                    </view>
+                                                    <stackView opaque="NO" contentMode="scaleToFill" distribution="equalSpacing" alignment="bottom" translatesAutoresizingMaskIntoConstraints="NO" id="status-row">
+                                                        <rect key="frame" x="0.0" y="40" width="275" height="27.666666666666671"/>
+                                                        <subviews>
+                                                            <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" spacing="2" translatesAutoresizingMaskIntoConstraints="NO" id="status-lines">
+                                                                <rect key="frame" x="0.0" y="0.0" width="108.66666666666667" height="27.666666666666668"/>
+                                                                <subviews>
+                                                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="&gt; WAITING..." textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" translatesAutoresizingMaskIntoConstraints="NO" id="status-primary">
+                                                                        <rect key="frame" x="0.0" y="0.0" width="108.66666666666667" height="14"/>
+                                                                        <fontDescription key="fontDescription" name="Menlo-Regular" family="Menlo" pointSize="12"/>
+                                                                        <color key="textColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                                    </label>
+                                                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="AWAITING_BOOTSTRAP" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" translatesAutoresizingMaskIntoConstraints="NO" id="status-secondary">
+                                                                        <rect key="frame" x="0.0" y="16" width="108.66666666666667" height="11.666666666666664"/>
+                                                                        <fontDescription key="fontDescription" name="Menlo-Regular" family="Menlo" pointSize="10"/>
+                                                                        <color key="textColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="0.59999999999999998" colorSpace="custom" customColorSpace="sRGB"/>
+                                                                    </label>
+                                                                </subviews>
+                                                            </stackView>
+                                                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="0%" textAlignment="right" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" translatesAutoresizingMaskIntoConstraints="NO" id="percent-label">
+                                                                <rect key="frame" x="259.33333333333331" y="12.333333333333258" width="15.666666666666686" height="15.333333333333336"/>
+                                                                <fontDescription key="fontDescription" name="Menlo-Bold" family="Menlo" pointSize="13"/>
+                                                                <color key="textColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                            </label>
+                                                        </subviews>
+                                                    </stackView>
+                                                </subviews>
+                                            </stackView>
+                                        </subviews>
+                                        <color key="backgroundColor" red="0.97647058819999999" green="0.97647058819999999" blue="0.97647058819999999" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                        <constraints>
+                                            <constraint firstItem="brand-stack" firstAttribute="centerX" secondItem="card-bg" secondAttribute="centerX" id="br-cx"/>
+                                            <constraint firstItem="brand-stack" firstAttribute="centerY" secondItem="card-bg" secondAttribute="centerY" id="br-cy"/>
+                                            <constraint firstItem="brand-stack" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="card-bg" secondAttribute="leading" constant="24" id="br-l"/>
+                                            <constraint firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="brand-stack" secondAttribute="trailing" constant="24" id="br-r"/>
+                                            <constraint firstItem="header-row" firstAttribute="leading" secondItem="card-bg" secondAttribute="leading" constant="40" id="hdr-l"/>
+                                            <constraint firstAttribute="trailing" secondItem="header-row" secondAttribute="trailing" constant="40" id="hdr-r"/>
+                                            <constraint firstItem="header-row" firstAttribute="top" secondItem="card-bg" secondAttribute="top" constant="40" id="hdr-t"/>
+                                            <constraint firstAttribute="bottom" secondItem="status-stack" secondAttribute="bottom" constant="40" id="st-b"/>
+                                            <constraint firstItem="status-stack" firstAttribute="leading" secondItem="card-bg" secondAttribute="leading" constant="40" id="st-l"/>
+                                            <constraint firstAttribute="trailing" secondItem="status-stack" secondAttribute="trailing" constant="40" id="st-r"/>
+                                        </constraints>
+                                    </view>
+                                </subviews>
+                                <color key="backgroundColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                <constraints>
+                                    <constraint firstAttribute="bottom" secondItem="card-bg" secondAttribute="bottom" constant="3" id="cb-ib"/>
+                                    <constraint firstItem="card-bg" firstAttribute="leading" secondItem="card-border" secondAttribute="leading" constant="3" id="cb-il"/>
+                                    <constraint firstAttribute="trailing" secondItem="card-bg" secondAttribute="trailing" constant="3" id="cb-ir"/>
+                                    <constraint firstItem="card-bg" firstAttribute="top" secondItem="card-border" secondAttribute="top" constant="3" id="cb-it"/>
+                                </constraints>
+                            </view>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" textAlignment="right" lineBreakMode="tailTruncation" numberOfLines="3" baselineAdjustment="alignBaselines" translatesAutoresizingMaskIntoConstraints="NO" id="binary-accent">
+                                <rect key="frame" x="316.66666666666669" y="52" width="48.333333333333314" height="35"/>
+                                <string key="text">01010101
+10101010
+01010101</string>
+                                <fontDescription key="fontDescription" name="Menlo-Regular" family="Menlo" pointSize="10"/>
+                                <color key="textColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="0.20000000000000001" colorSpace="custom" customColorSpace="sRGB"/>
+                            </label>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="2" baselineAdjustment="alignBaselines" translatesAutoresizingMaskIntoConstraints="NO" id="peer-accent">
+                                <rect key="frame" x="28.000000000000004" y="788.66666666666663" width="60.333333333333343" height="23.333333333333371"/>
+                                <string key="text">SEED: 242
+PEER: 1.2k</string>
+                                <fontDescription key="fontDescription" name="Menlo-Regular" family="Menlo" pointSize="10"/>
+                                <color key="textColor" red="0.1058823529" green="0.1058823529" blue="0.1058823529" alpha="0.20000000000000001" colorSpace="custom" customColorSpace="sRGB"/>
+                            </label>
+                        </subviews>
+                        <viewLayoutGuide key="safeArea" id="6Tk-OE-BBY"/>
+                        <color key="backgroundColor" red="0.97647058819999999" green="0.97647058819999999" blue="0.97647058819999999" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <constraints>
+                            <constraint firstAttribute="trailing" secondItem="binary-accent" secondAttribute="trailing" constant="28" id="bin-r"/>
+                            <constraint firstItem="binary-accent" firstAttribute="top" secondItem="Ze5-6b-2t3" secondAttribute="top" constant="52" id="bin-t"/>
+                            <constraint firstItem="6Tk-OE-BBY" firstAttribute="bottom" secondItem="card-border" secondAttribute="bottom" constant="16" id="card-b"/>
+                            <constraint firstItem="card-border" firstAttribute="leading" secondItem="Ze5-6b-2t3" secondAttribute="leading" constant="16" id="card-l"/>
+                            <constraint firstAttribute="trailing" secondItem="card-border" secondAttribute="trailing" constant="16" id="card-r"/>
+                            <constraint firstItem="card-border" firstAttribute="top" secondItem="6Tk-OE-BBY" secondAttribute="top" constant="16" id="card-t"/>
+                            <constraint firstAttribute="bottom" secondItem="peer-accent" secondAttribute="bottom" constant="40" id="peer-b"/>
+                            <constraint firstItem="peer-accent" firstAttribute="leading" secondItem="Ze5-6b-2t3" secondAttribute="leading" constant="28" id="peer-l"/>
+                            <constraint firstItem="card-shadow" firstAttribute="height" secondItem="card-border" secondAttribute="height" id="sh-h"/>
+                            <constraint firstItem="card-shadow" firstAttribute="leading" secondItem="card-border" secondAttribute="leading" constant="8" id="sh-l"/>
+                            <constraint firstItem="card-shadow" firstAttribute="top" secondItem="card-border" secondAttribute="top" constant="8" id="sh-t"/>
+                            <constraint firstItem="card-shadow" firstAttribute="width" secondItem="card-border" secondAttribute="width" id="sh-w"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="iYj-Kq-Ea1" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="53" y="375"/>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="gauge.with.dots.needle.67percent" catalog="system" width="128" height="123"/>
+    </resources>
+</document>

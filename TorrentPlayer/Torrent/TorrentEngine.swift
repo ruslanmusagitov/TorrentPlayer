@@ -38,7 +38,67 @@ final class TorrentEngine {
         case failed(String)
     }
 
+    /// Discrete app-layer bootstrap steps for splash (not torrent lifecycle).
+    enum BootStep: Equatable {
+        case idle
+        case preparingStorage
+        case startingSession
+        case bindingPeerPort
+        case bootstrappingDHT
+        case ready
+        case failed(String)
+
+        var isTerminal: Bool {
+            switch self {
+            case .ready, .failed:
+                true
+            default:
+                false
+            }
+        }
+
+        var statusLine: String {
+            switch self {
+            case .idle:
+                "> WAITING..."
+            case .preparingStorage:
+                "> PREPARING_STORAGE..."
+            case .startingSession:
+                "> STARTING_SESSION..."
+            case .bindingPeerPort:
+                "> BINDING_PEER_PORT..."
+            case .bootstrappingDHT:
+                "> BOOTSTRAPPING_DHT..."
+            case .ready:
+                "> ENGINE_READY_STABLE"
+            case .failed:
+                "> BOOT_FAILED"
+            }
+        }
+
+        var secondaryLine: String {
+            switch self {
+            case .idle:
+                "AWAITING_BOOTSTRAP"
+            case .preparingStorage:
+                "CREATING_DOWNLOADS_DIRECTORY"
+            case .startingSession:
+                "ALLOCATING_TORRENT_SESSION"
+            case .bindingPeerPort:
+                "OPENING_PEER_LISTEN_PORT"
+            case .bootstrappingDHT:
+                "CONTACTING_DHT_BOOTSTRAP_NODES"
+            case .ready:
+                "SESSION_OPERATIONAL"
+            case let .failed(message):
+                message.uppercased()
+            }
+        }
+    }
+
     private(set) var phase: Phase = .idle
+    private(set) var bootStep: BootStep = .idle
+    private(set) var bootProgress: Double = 0
     private(set) var lastMagnetURI: String?
     private(set) var activeTorrent: ActiveTorrent?
     private(set) var selectedFileID: Int?
@@ -172,7 +232,12 @@ final class TorrentEngine {
 
         #if os(macOS) || os(iOS)
         do {
+            bootStep = .preparingStorage
+            bootProgress = 0.15
             let downloads = try Self.downloadsDirectory()
+
+            bootStep = .startingSession
+            bootProgress = 0.35
             let settings = SessionSettings(
                 listenPort: 6881,
                 dhtEnabled: true,
@@ -181,26 +246,40 @@ final class TorrentEngine {
                 seedingEnabled: AppPreferences.seedingEnabled
             )
             let session = Session(settings: settings)
+
+            bootStep = .bindingPeerPort
+            bootProgress = 0.55
             do {
                 try await session.startListening()
                 TPLog.engine("Listening for peers on port \(settings.listenPort)")
             } catch {
                 TPLog.engine("Listen failed (optional): \(error.localizedDescription)")
             }
+
+            bootStep = .bootstrappingDHT
+            bootProgress = 0.85
             do {
                 try await session.startDHT()
                 TPLog.engine("DHT started")
             } catch {
                 TPLog.engine("DHT start failed (optional): \(error.localizedDescription)")
             }
+
             self.session = session
+            bootStep = .ready
+            bootProgress = 1
             phase = .ready
             TPLog.engine("Session ready savePath=\(downloads.path)")
         } catch {
-            phase = .error(error.localizedDescription)
-            TPLog.error("bootstrap failed: \(error.localizedDescription)")
+            let message = error.localizedDescription
+            bootStep = .failed(message)
+            bootProgress = 1
+            phase = .error(message)
+            TPLog.error("bootstrap failed: \(message)")
         }
         #else
+        bootStep = .failed("Unsupported platform")
+        bootProgress = 1
         phase = .unsupportedPlatform
         #endif
     }

@@ -382,10 +382,14 @@ struct TorrentEngineTests {
         let engine = TorrentEngine()
         await engine.bootstrap()
         #expect(engine.isOperational)
+        #expect(engine.bootStep == .ready)
+        #expect(engine.bootProgress == 1)
         #else
         let engine = TorrentEngine()
         await engine.bootstrap()
         #expect(engine.phase == .unsupportedPlatform)
+        #expect(engine.bootStep.isTerminal)
+        #expect(engine.bootProgress == 1)
         #endif
     }
 
