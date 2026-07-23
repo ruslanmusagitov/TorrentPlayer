@@ -17,6 +17,8 @@ public final class PeerConnection: @unchecked Sendable {
     public var onDisconnect: (@Sendable () -> Void)?
     public private(set) var remotePeerID: Data?
     public private(set) var supportsExtensions: Bool = false
+    /// True when this connection was accepted (inbound) rather than dialed.
+    public private(set) var isIncoming: Bool = false
 
     public init(address: String, port: UInt16, infoHash: Data, peerID: Data) {
         self.address = address
@@ -83,6 +85,35 @@ public final class PeerConnection: @unchecked Sendable {
         return ch
     }
 
+    /// Finish an inbound connection whose remote handshake is already decoded.
+    /// Pipeline must already contain `ByteToMessageHandler(PeerMessageDecoder)`.
+    public func adoptIncoming(
+        channel: Channel,
+        remotePeerID: Data,
+        supportsExtensions: Bool
+    ) async throws {
+        setChannel(channel)
+        self.isIncoming = true
+        self.remotePeerID = remotePeerID
+        self.supportsExtensions = supportsExtensions
+
+        let onMsg = self.onMessage
+        let onDisc = self.onDisconnect
+        try await channel.pipeline.addHandler(
+            PeerMessageHandler(onMessage: onMsg, onDisconnect: onDisc)
+        ).get()
+
+        let handshake = Handshake(infoHash: infoHash, peerID: peerID)
+        var buffer = channel.allocator.buffer(capacity: Handshake.length)
+        buffer.writeBytes(handshake.encode())
+        try await channel.writeAndFlush(buffer).get()
+
+        try await channel.pipeline.addHandler(PeerMessageEncoder()).get()
+
+        _ = try? await channel.setOption(ChannelOptions.autoRead, value: true).get()
+        channel.read()
+    }
+
     public func send(_ message: PeerMessage) async throws {
         guard let ch = getChannel() else {
             throw PeerConnectionError.notConnected
@@ -110,6 +141,7 @@ final class PeerMessageDecoder: ByteToMessageDecoder {
     private let lock = NSLock()
     private var _handshakeReceived = false
     private var _remotePeerID: Data?
+    private var _remoteInfoHash: Data?
     private var _remoteSupportsExtensions = false
 
     var isHandshakeReceived: Bool {
@@ -120,6 +152,11 @@ final class PeerMessageDecoder: ByteToMessageDecoder {
     var remotePeerID: Data? {
         lock.lock(); defer { lock.unlock() }
         return _remotePeerID
+    }
+
+    var remoteInfoHash: Data? {
+        lock.lock(); defer { lock.unlock() }
+        return _remoteInfoHash
     }
 
     var remoteSupportsExtensions: Bool {
@@ -139,6 +176,7 @@ final class PeerMessageDecoder: ByteToMessageDecoder {
             let handshake = try Handshake.decode(from: Data(bytes))
             lock.lock()
             _remotePeerID = handshake.peerID
+            _remoteInfoHash = handshake.infoHash
             _remoteSupportsExtensions = (handshake.reserved[5] & 0x10) != 0
             _handshakeReceived = true
             lock.unlock()

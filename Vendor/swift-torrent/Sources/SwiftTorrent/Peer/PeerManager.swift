@@ -145,6 +145,61 @@ public actor PeerManager {
         }
     }
 
+    /// Accept an inbound peer whose remote handshake has already been decoded.
+    public func acceptIncoming(
+        channel: Channel,
+        address: String,
+        port: UInt16,
+        remotePeerID: Data,
+        supportsExtensions: Bool,
+        pendingMessages: [PeerMessage] = []
+    ) async {
+        let key = "\(address):\(port)"
+        guard connections[key] == nil else {
+            try? await channel.close().get()
+            return
+        }
+        guard connections.count < maxConnections else {
+            try? await channel.close().get()
+            return
+        }
+
+        let conn = PeerConnection(address: address, port: port, infoHash: infoHash, peerID: peerID)
+        connections[key] = conn
+        peerInfos[key] = PeerInfo(id: remotePeerID, address: address, port: port)
+
+        let pc = pieceCount > 0 ? pieceCount : 1
+        let state = PeerState(pieceCount: pc)
+        peerStates[key] = state
+        await state.setAmInterested(true)
+        TorrentLog.peer("acceptIncoming \(key) pieceCount=\(pc) connections=\(connections.count)")
+
+        conn.onMessage = { [weak self] message in
+            guard let self else { return }
+            Task { await self.handleMessage(message, from: key) }
+        }
+        conn.onDisconnect = { [weak self] in
+            guard let self else { return }
+            Task { await self.handleDisconnect(key: key) }
+        }
+
+        do {
+            try await conn.adoptIncoming(
+                channel: channel,
+                remotePeerID: remotePeerID,
+                supportsExtensions: supportsExtensions
+            )
+            await onPeerConnected(key: key, conn: conn)
+            for message in pendingMessages {
+                await handleMessage(message, from: key)
+            }
+        } catch {
+            TorrentLog.peer("accept FAILED \(key): \(error)")
+            try? await channel.close().get()
+            removePeerByKey(key)
+        }
+    }
+
     private func onPeerConnected(key: String, conn: PeerConnection) async {
         connectedPeers.insert(key)
         TorrentLog.peer(

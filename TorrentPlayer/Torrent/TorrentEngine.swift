@@ -180,6 +180,12 @@ final class TorrentEngine {
             )
             let session = Session(settings: settings)
             do {
+                try await session.startListening()
+                TPLog.engine("Listening for peers on port \(settings.listenPort)")
+            } catch {
+                TPLog.engine("Listen failed (optional): \(error.localizedDescription)")
+            }
+            do {
                 try await session.startDHT()
                 TPLog.engine("DHT started")
             } catch {

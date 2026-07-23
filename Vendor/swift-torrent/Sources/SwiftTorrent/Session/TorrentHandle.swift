@@ -14,6 +14,7 @@ public actor TorrentHandle {
     private let magnetLink: MagnetLink?
     private let savePath: String
     private let peerID: Data
+    private let listenPort: UInt16
     private let group: EventLoopGroup
 
     private var peerManager: PeerManager
@@ -45,6 +46,7 @@ public actor TorrentHandle {
         self.magnetLink = params.magnetLink
         self.savePath = params.savePath ?? settings.savePath
         self.peerID = generatePeerID()
+        self.listenPort = settings.listenPort > 0 ? settings.listenPort : 6881
         self.group = group
         self.pendingResumeData = params.resumeData
         self.peerManager = PeerManager(
@@ -135,7 +137,7 @@ public actor TorrentHandle {
             // Magnet announce before metadata: left must be > 0 or trackers treat us as a seeder.
             let left = info?.totalSize ?? (1 << 30)
             let params = AnnounceParams(
-                infoHash: infoHash, peerID: peerID, port: 6881,
+                infoHash: infoHash, peerID: peerID, port: listenPort,
                 left: left - totalDownloaded, event: "started"
             )
             await announceToAllTrackers(trackerMgr: trackerMgr, params: params)
@@ -175,7 +177,7 @@ public actor TorrentHandle {
         // Re-announce with the real size so we get download peers.
         if let trackerMgr = trackerManager {
             let params = AnnounceParams(
-                infoHash: infoHash, peerID: peerID, port: 6881,
+                infoHash: infoHash, peerID: peerID, port: listenPort,
                 left: info.totalSize, event: "started"
             )
             TorrentLog.session("re-announce after metadata left=\(info.totalSize)")
@@ -242,6 +244,30 @@ public actor TorrentHandle {
         }
     }
 
+    /// Add a peer discovered outside tracker announce (e.g. DHT).
+    public func addPeer(address: String, port: UInt16) async {
+        await peerManager.addPeer(address: address, port: port)
+    }
+
+    /// Accept an inbound peer connection already past the remote handshake.
+    public func acceptIncomingPeer(
+        channel: Channel,
+        address: String,
+        port: UInt16,
+        remotePeerID: Data,
+        supportsExtensions: Bool,
+        pendingMessages: [PeerMessage] = []
+    ) async {
+        await peerManager.acceptIncoming(
+            channel: channel,
+            address: address,
+            port: port,
+            remotePeerID: remotePeerID,
+            supportsExtensions: supportsExtensions,
+            pendingMessages: pendingMessages
+        )
+    }
+
     /// Announce to all tracker tiers concurrently.
     private func announceToAllTrackers(trackerMgr: TrackerManager, params: AnnounceParams) async {
         if let response = try? await trackerMgr.announce(params: params) {
@@ -268,7 +294,7 @@ public actor TorrentHandle {
                 let uploaded = await self.totalUploaded
                 let downloaded = await self.totalDownloaded
                 let params = AnnounceParams(
-                    infoHash: infoHash, peerID: peerID, port: 6881,
+                    infoHash: infoHash, peerID: peerID, port: listenPort,
                     uploaded: uploaded, downloaded: downloaded,
                     left: left
                 )
