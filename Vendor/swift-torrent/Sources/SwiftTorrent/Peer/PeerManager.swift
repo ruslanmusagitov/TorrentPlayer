@@ -24,7 +24,12 @@ public actor PeerManager {
     /// Throttle noisy fillRequests "no pick" logs per peer.
     private var lastNoPickLog: [String: ContinuousClock.Instant] = [:]
 
-    public init(infoHash: Data, peerID: Data, group: EventLoopGroup, maxConnections: Int = 50) {
+    public init(
+        infoHash: Data,
+        peerID: Data,
+        group: EventLoopGroup,
+        maxConnections: Int = 50
+    ) {
         self.infoHash = infoHash
         self.peerID = peerID
         self.group = group
@@ -217,11 +222,9 @@ public actor PeerManager {
             TorrentLog.peer("state ready \(key) bitfieldPopcount=\(bf.popcount)/\(bf.count) choking=\(await state.getPeerChoking())")
         }
 
-        // Send our bitfield once we know the piece count (post-metadata).
+        // Advertise empty bitfield (download-only: we do not upload pieces).
         if pieceCount > 0 {
-            let empty = Bitfield(count: pieceCount)
-            try? await conn.send(.bitfield(empty.toData()))
-            TorrentLog.peer("sent empty bitfield (\(pieceCount) pieces) → \(key)")
+            await sendEmptyBitfield(to: key, conn: conn)
         }
 
         // Send interested
@@ -237,6 +240,12 @@ public actor PeerManager {
 
         // Peer may already have unchoked us while state existed during handshake.
         await fillRequests(for: key)
+    }
+
+    private func sendEmptyBitfield(to key: String, conn: PeerConnection) async {
+        let empty = Bitfield(count: pieceCount)
+        try? await conn.send(.bitfield(empty.toData()))
+        TorrentLog.peer("sent empty bitfield (\(pieceCount) pieces) → \(key)")
     }
 
     private func handleDisconnect(key: String) {
@@ -296,9 +305,15 @@ public actor PeerManager {
 
         case .interested:
             await state.setPeerInterested(true)
+            TorrentLog.peer("interested ← \(key)")
 
         case .notInterested:
             await state.setPeerInterested(false)
+            TorrentLog.peer("notInterested ← \(key)")
+
+        case .request:
+            // Download-only: ignore piece requests from peers.
+            break
 
         case .piece(let index, let begin, let block):
             let pieceIndex = Int(index)
@@ -453,15 +468,10 @@ public actor PeerManager {
                     TorrentLog.error("Storage", "writePiece \(pieceIndex) failed: \(error)")
                 }
             }
-            await broadcastHave(pieceIndex: UInt32(pieceIndex))
             onPieceCompleted?(pieceIndex)
         } else {
             TorrentLog.error("Piece", "HASH FAIL piece \(pieceIndex) (\(data.count) bytes)")
         }
-    }
-
-    private func markConnected(key: String) {
-        connectedPeers.insert(key)
     }
 
     private func removePeerByKey(_ key: String) {
@@ -497,37 +507,9 @@ public actor PeerManager {
         connectedPeers.count
     }
 
-    /// Implements the choking algorithm — unchoke top uploaders + one optimistic unchoke.
-    public func runChokingAlgorithm() async {
-        var peers = Array(peerInfos)
-        peers.sort { $0.value.downloadRate > $1.value.downloadRate }
-
-        let unchokeSlots = 4
-        for (i, peer) in peers.enumerated() {
-            var info = peer.value
-            if i < unchokeSlots {
-                info.amChoking = false
-            } else if i == unchokeSlots {
-                info.amChoking = false
-            } else {
-                info.amChoking = true
-            }
-            peerInfos[peer.key] = info
-        }
-    }
-
     /// Send interested message to all peers.
     public func sendInterestedToAll() async {
         let msg = PeerMessage.interested
-        for (key, conn) in connections {
-            guard connectedPeers.contains(key) else { continue }
-            try? await conn.send(msg)
-        }
-    }
-
-    /// Broadcast a have message to all peers.
-    public func broadcastHave(pieceIndex: UInt32) async {
-        let msg = PeerMessage.have(pieceIndex: pieceIndex)
         for (key, conn) in connections {
             guard connectedPeers.contains(key) else { continue }
             try? await conn.send(msg)

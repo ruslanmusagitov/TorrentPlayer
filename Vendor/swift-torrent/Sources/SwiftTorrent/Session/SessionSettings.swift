@@ -6,7 +6,6 @@ public struct SessionSettings: Sendable {
     public var maxConnections: Int
     public var maxConnectionsPerTorrent: Int
     public var downloadRateLimit: Int  // bytes/sec, 0 = unlimited
-    public var uploadRateLimit: Int
     public var dhtEnabled: Bool
     public var dhtPort: Int
     public var userAgent: String
@@ -17,7 +16,6 @@ public struct SessionSettings: Sendable {
         maxConnections: Int = 200,
         maxConnectionsPerTorrent: Int = 50,
         downloadRateLimit: Int = 0,
-        uploadRateLimit: Int = 0,
         dhtEnabled: Bool = true,
         dhtPort: Int = 6881,
         userAgent: String = "SwiftTorrent/1.0",
@@ -27,7 +25,6 @@ public struct SessionSettings: Sendable {
         self.maxConnections = maxConnections
         self.maxConnectionsPerTorrent = maxConnectionsPerTorrent
         self.downloadRateLimit = downloadRateLimit
-        self.uploadRateLimit = uploadRateLimit
         self.dhtEnabled = dhtEnabled
         self.dhtPort = dhtPort
         self.userAgent = userAgent
