@@ -31,16 +31,8 @@ public actor PeerState {
         peerChoking
     }
 
-    public func getAmChoking() -> Bool {
-        amChoking
-    }
-
     public func getAmInterested() -> Bool {
         amInterested
-    }
-
-    public func getPeerInterested() -> Bool {
-        peerInterested
     }
 
     public var pendingCount: Int {

@@ -110,8 +110,6 @@ final class TorrentEngine {
     private(set) var piecesCompleted: Int = 0
     private(set) var piecesTotal: Int = 0
     private(set) var usesEmbeddedVLC: Bool = false
-    /// Whether completed pieces are uploaded to peers (Settings toggle, default off).
-    private(set) var seedingEnabled: Bool = AppPreferences.seedingEnabled
 
     var selectedFile: TorrentFileItem? {
         guard let selectedFileID, let activeTorrent else { return nil }
@@ -242,8 +240,7 @@ final class TorrentEngine {
                 listenPort: 6881,
                 dhtEnabled: true,
                 dhtPort: 6882, // avoid clashing with listenPort
-                savePath: downloads.path,
-                seedingEnabled: AppPreferences.seedingEnabled
+                savePath: downloads.path
             )
             let session = Session(settings: settings)
 
@@ -776,16 +773,6 @@ final class TorrentEngine {
         try wipeResumeDirectory()
         #endif
         TPLog.engine("cleared downloads at \(dir.path)")
-    }
-
-    /// Persist preference and apply immediately to the live session / active torrent.
-    func setSeedingEnabled(_ enabled: Bool) async {
-        AppPreferences.seedingEnabled = enabled
-        seedingEnabled = enabled
-        TPLog.engine("seedingEnabled=\(enabled)")
-        #if os(macOS) || os(iOS)
-        await session?.setSeedingEnabled(enabled)
-        #endif
     }
 
     /// Deletes all resume `.dat` files under Application Support/TorrentPlayer/Resume.

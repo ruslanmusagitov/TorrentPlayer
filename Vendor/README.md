@@ -24,6 +24,4 @@ Local copy of [warppipe/swift-torrent](https://github.com/warppipe/swift-torrent
   - `Session.startListening()` binds TCP `listenPort` and accepts inbound BitTorrent handshakes (`IncomingPeerHandler` → `PeerManager.acceptIncoming`).
   - Tracker announces advertise `settings.listenPort` (was hard-coded 6881).
   - DHT `get_peers` is wired: after each torrent start, `Session` runs iterative `DHTTraversal.getPeers` and feeds addresses into `TorrentHandle.addPeer`.
-- Seeding (opt-in via app Settings, default off):
-  - `SessionSettings.seedingEnabled` → `PeerManager`: honest completed bitfield, unchoke on interested, serve `.request` from `DiskIO.readPiece`, bump `totalUploaded`.
-  - When off: empty bitfield + ignore requests (download-only), matching prior behavior.
+- Download-only: always advertise an empty bitfield and ignore inbound `.request` (no piece upload / seeding).

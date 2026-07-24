@@ -83,21 +83,9 @@ public actor Session {
         return statuses
     }
 
-    /// Update session settings and apply live seeding flag to all torrents.
-    public func updateSettings(_ newSettings: SessionSettings) async {
+    /// Update session settings.
+    public func updateSettings(_ newSettings: SessionSettings) {
         self.settings = newSettings
-        for handle in torrents.values {
-            await handle.setSeedingEnabled(newSettings.seedingEnabled)
-        }
-    }
-
-    /// Toggle seeding for the whole session (persists in settings).
-    public func setSeedingEnabled(_ enabled: Bool) async {
-        settings.seedingEnabled = enabled
-        for handle in torrents.values {
-            await handle.setSeedingEnabled(enabled)
-        }
-        TorrentLog.session("session seedingEnabled=\(enabled)")
     }
 
     /// Bind TCP listen port for inbound peer connections.

@@ -19,11 +19,8 @@ public actor PeerManager {
     public var metadataExchange: MetadataExchange?
     public var onPieceCompleted: ((Int) -> Void)?
     public var onMetadataReceived: ((TorrentInfo) -> Void)?
-    /// Called with uploaded block byte count when a piece block is sent to a peer.
-    public var onBlockUploaded: ((Int) -> Void)?
 
     private var pieceCount: Int = 0
-    private var seedingEnabled: Bool
     /// Throttle noisy fillRequests "no pick" logs per peer.
     private var lastNoPickLog: [String: ContinuousClock.Instant] = [:]
 
@@ -31,14 +28,12 @@ public actor PeerManager {
         infoHash: Data,
         peerID: Data,
         group: EventLoopGroup,
-        maxConnections: Int = 50,
-        seedingEnabled: Bool = false
+        maxConnections: Int = 50
     ) {
         self.infoHash = infoHash
         self.peerID = peerID
         self.group = group
         self.maxConnections = maxConnections
-        self.seedingEnabled = seedingEnabled
     }
 
     public func configure(pieceManager: PieceManager, piecePicker: PiecePicker, diskIO: DiskIO, pieceCount: Int) {
@@ -103,24 +98,6 @@ public actor PeerManager {
     public func setOnPieceCompleted(_ handler: @escaping (Int) -> Void) {
         self.onPieceCompleted = handler
     }
-
-    public func setOnBlockUploaded(_ handler: @escaping (Int) -> Void) {
-        self.onBlockUploaded = handler
-    }
-
-    /// Enable or disable uploading pieces to peers. Applies immediately to connected peers.
-    public func setSeedingEnabled(_ enabled: Bool) async {
-        guard seedingEnabled != enabled else { return }
-        seedingEnabled = enabled
-        TorrentLog.peer("seedingEnabled=\(enabled)")
-        if enabled {
-            await advertiseSeedingToConnectedPeers()
-        } else {
-            await chokeAllUploadSlots()
-        }
-    }
-
-    public var isSeedingEnabled: Bool { seedingEnabled }
 
     /// Drop all peers (e.g. after magnet metadata when pieceCount becomes known).
     public func disconnectAll() async {
@@ -245,9 +222,9 @@ public actor PeerManager {
             TorrentLog.peer("state ready \(key) bitfieldPopcount=\(bf.popcount)/\(bf.count) choking=\(await state.getPeerChoking())")
         }
 
-        // Send our bitfield once we know the piece count (post-metadata).
+        // Advertise empty bitfield (download-only: we do not upload pieces).
         if pieceCount > 0 {
-            await sendOurBitfield(to: key, conn: conn)
+            await sendEmptyBitfield(to: key, conn: conn)
         }
 
         // Send interested
@@ -261,62 +238,14 @@ public actor PeerManager {
             TorrentLog.peer("sent extended handshake → \(key)")
         }
 
-        // If seeding and peer already expressed interest, unchoke now.
-        if seedingEnabled, let state = peerStates[key], await state.getPeerInterested() {
-            await unchokePeer(key: key, conn: conn, state: state)
-        }
-
         // Peer may already have unchoked us while state existed during handshake.
         await fillRequests(for: key)
     }
 
-    private func sendOurBitfield(to key: String, conn: PeerConnection) async {
-        if seedingEnabled, let pm = pieceManager {
-            let completed = await pm.getCompleted()
-            try? await conn.send(.bitfield(completed.toData()))
-            TorrentLog.peer(
-                "sent bitfield have=\(completed.popcount)/\(pieceCount) → \(key)"
-            )
-        } else {
-            let empty = Bitfield(count: pieceCount)
-            try? await conn.send(.bitfield(empty.toData()))
-            TorrentLog.peer("sent empty bitfield (\(pieceCount) pieces) → \(key)")
-        }
-    }
-
-    private func advertiseSeedingToConnectedPeers() async {
-        guard pieceCount > 0 else { return }
-        for key in connectedPeers {
-            guard let conn = connections[key], let state = peerStates[key] else { continue }
-            await sendOurBitfield(to: key, conn: conn)
-            if await state.getPeerInterested() {
-                await unchokePeer(key: key, conn: conn, state: state)
-            }
-        }
-    }
-
-    private func chokeAllUploadSlots() async {
-        for key in connectedPeers {
-            guard let conn = connections[key], let state = peerStates[key] else { continue }
-            guard !(await state.getAmChoking()) else { continue }
-            await state.setAmChoking(true)
-            try? await conn.send(.choke)
-            TorrentLog.peer("sent choke → \(key) (seeding off)")
-        }
-    }
-
-    private func unchokePeer(key: String, conn: PeerConnection, state: PeerState) async {
-        guard await state.getAmChoking() else { return }
-        await state.setAmChoking(false)
-        try? await conn.send(.unchoke)
-        TorrentLog.peer("sent unchoke → \(key)")
-    }
-
-    private func chokePeer(key: String, conn: PeerConnection, state: PeerState) async {
-        guard !(await state.getAmChoking()) else { return }
-        await state.setAmChoking(true)
-        try? await conn.send(.choke)
-        TorrentLog.peer("sent choke → \(key)")
+    private func sendEmptyBitfield(to key: String, conn: PeerConnection) async {
+        let empty = Bitfield(count: pieceCount)
+        try? await conn.send(.bitfield(empty.toData()))
+        TorrentLog.peer("sent empty bitfield (\(pieceCount) pieces) → \(key)")
     }
 
     private func handleDisconnect(key: String) {
@@ -377,25 +306,14 @@ public actor PeerManager {
         case .interested:
             await state.setPeerInterested(true)
             TorrentLog.peer("interested ← \(key)")
-            if seedingEnabled, let conn = connections[key] {
-                await unchokePeer(key: key, conn: conn, state: state)
-            }
 
         case .notInterested:
             await state.setPeerInterested(false)
             TorrentLog.peer("notInterested ← \(key)")
-            if let conn = connections[key] {
-                await chokePeer(key: key, conn: conn, state: state)
-            }
 
-        case .request(let index, let begin, let length):
-            await handleIncomingRequest(
-                from: key,
-                state: state,
-                index: Int(index),
-                begin: Int(begin),
-                length: Int(length)
-            )
+        case .request:
+            // Download-only: ignore piece requests from peers.
+            break
 
         case .piece(let index, let begin, let block):
             let pieceIndex = Int(index)
@@ -437,46 +355,6 @@ public actor PeerManager {
 
         default:
             break
-        }
-    }
-
-    private func handleIncomingRequest(
-        from key: String,
-        state: PeerState,
-        index: Int,
-        begin: Int,
-        length: Int
-    ) async {
-        guard seedingEnabled else {
-            TorrentLog.peer("DROP request(\(index),\(begin),\(length)) ← \(key) — seeding off")
-            return
-        }
-        guard !(await state.getAmChoking()) else {
-            TorrentLog.peer("DROP request(\(index),\(begin),\(length)) ← \(key) — choking")
-            return
-        }
-        guard let pm = pieceManager, let dio = diskIO, let conn = connections[key] else { return }
-        guard await pm.hasPiece(index) else {
-            TorrentLog.peer("DROP request(\(index),\(begin),\(length)) ← \(key) — missing piece")
-            return
-        }
-        let pieceSize = await pm.expectedPieceSize(index)
-        guard begin >= 0, length > 0, begin + length <= pieceSize, length <= 16384 * 2 else {
-            TorrentLog.peer("DROP request(\(index),\(begin),\(length)) ← \(key) — invalid range")
-            return
-        }
-        do {
-            let pieceData = try await dio.readPiece(index: index)
-            guard begin + length <= pieceData.count else {
-                TorrentLog.peer("DROP request(\(index),\(begin),\(length)) ← \(key) — short read")
-                return
-            }
-            let block = pieceData.subdata(in: begin..<(begin + length))
-            try await conn.send(.piece(index: UInt32(index), begin: UInt32(begin), block: block))
-            onBlockUploaded?(block.count)
-            TorrentLog.peer("sent piece(\(index),\(begin),\(block.count)) → \(key)")
-        } catch {
-            TorrentLog.error("Peer", "readPiece \(index) for \(key) failed: \(error)")
         }
     }
 
@@ -590,15 +468,10 @@ public actor PeerManager {
                     TorrentLog.error("Storage", "writePiece \(pieceIndex) failed: \(error)")
                 }
             }
-            await broadcastHave(pieceIndex: UInt32(pieceIndex))
             onPieceCompleted?(pieceIndex)
         } else {
             TorrentLog.error("Piece", "HASH FAIL piece \(pieceIndex) (\(data.count) bytes)")
         }
-    }
-
-    private func markConnected(key: String) {
-        connectedPeers.insert(key)
     }
 
     private func removePeerByKey(_ key: String) {
@@ -634,37 +507,9 @@ public actor PeerManager {
         connectedPeers.count
     }
 
-    /// Implements the choking algorithm — unchoke top uploaders + one optimistic unchoke.
-    public func runChokingAlgorithm() async {
-        var peers = Array(peerInfos)
-        peers.sort { $0.value.downloadRate > $1.value.downloadRate }
-
-        let unchokeSlots = 4
-        for (i, peer) in peers.enumerated() {
-            var info = peer.value
-            if i < unchokeSlots {
-                info.amChoking = false
-            } else if i == unchokeSlots {
-                info.amChoking = false
-            } else {
-                info.amChoking = true
-            }
-            peerInfos[peer.key] = info
-        }
-    }
-
     /// Send interested message to all peers.
     public func sendInterestedToAll() async {
         let msg = PeerMessage.interested
-        for (key, conn) in connections {
-            guard connectedPeers.contains(key) else { continue }
-            try? await conn.send(msg)
-        }
-    }
-
-    /// Broadcast a have message to all peers.
-    public func broadcastHave(pieceIndex: UInt32) async {
-        let msg = PeerMessage.have(pieceIndex: pieceIndex)
         for (key, conn) in connections {
             guard connectedPeers.contains(key) else { continue }
             try? await conn.send(msg)

@@ -89,8 +89,6 @@ struct SettingsSheetView: View {
                         }
                     }
 
-                    seedingToggleCard
-
                     VStack(spacing: KTSpacing.sm) {
                         BrutalSecondaryButton(
                             title: isClearing ? "Working…" : "Clear Downloads",
@@ -179,37 +177,6 @@ struct SettingsSheetView: View {
             ) {
                 action()
             }
-        }
-        .padding(KTSpacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(KTColor.surface)
-        .thickBorder()
-        .hardShadow()
-    }
-
-    private var seedingToggleCard: some View {
-        VStack(alignment: .leading, spacing: KTSpacing.sm) {
-            Text("SEEDING")
-                .font(KTTypography.labelCaps())
-                .tracking(1.1)
-                .foregroundStyle(KTColor.outline)
-
-            Toggle(isOn: Binding(
-                get: { engine.seedingEnabled },
-                set: { newValue in
-                    Task { await engine.setSeedingEnabled(newValue) }
-                }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Upload to peers")
-                        .font(KTTypography.technicalSM().weight(.bold))
-                        .foregroundStyle(KTColor.onBackground)
-                    Text("Share completed pieces with other peers. Off by default.")
-                        .font(KTTypography.technicalSM())
-                        .foregroundStyle(KTColor.onSurfaceVariant)
-                }
-            }
-            .tint(KTColor.primary)
         }
         .padding(KTSpacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
