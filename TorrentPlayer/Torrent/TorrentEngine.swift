@@ -109,7 +109,6 @@ final class TorrentEngine {
     private(set) var peersConnected: Int = 0
     private(set) var piecesCompleted: Int = 0
     private(set) var piecesTotal: Int = 0
-    /// True when the selected container needs SwiftVLC (MKV/AVI/etc.).
     private(set) var usesEmbeddedVLC: Bool = false
 
     var selectedFile: TorrentFileItem? {
