@@ -34,6 +34,9 @@ struct StreamingPlayerView: View {
     @State private var controlsHideToken = UUID()
     @State private var audioTrackOptions: [AudioTrackOption] = []
     @State private var showAudioTrackMenu = false
+    #if os(macOS)
+    @FocusState private var playerFocused: Bool
+    #endif
     #if os(macOS) || os(iOS)
     @State private var player: AVPlayer?
     @State private var vlcPlayer: Player?
@@ -168,6 +171,9 @@ struct StreamingPlayerView: View {
             rebuildPlayer(with: url)
         }
         .onChange(of: isActive) { _, active in
+            #if os(macOS)
+            playerFocused = active
+            #endif
             if active {
                 if engine.selectedFileID != nil, engine.playbackURL == nil {
                     Task { await engine.preparePlayback() }
@@ -301,6 +307,45 @@ struct StreamingPlayerView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeInOut(duration: 0.25), value: controlsVisible)
+        #if os(macOS)
+        // Keys live on the canvas so ScrollView can still use arrows when
+        // focus is on stats / stream info below the video.
+        .focusable()
+        .focused($playerFocused)
+        .onKeyPress(.space) {
+            handlePlayerKey {
+                userInteractedWithControls()
+                togglePlayPause()
+            }
+        }
+        .onKeyPress(.leftArrow) {
+            handlePlayerKey {
+                userInteractedWithControls()
+                skip(by: -10)
+            }
+        }
+        .onKeyPress(.rightArrow) {
+            handlePlayerKey {
+                userInteractedWithControls()
+                skip(by: 10)
+            }
+        }
+        .onKeyPress(.upArrow) {
+            handlePlayerKey {
+                nudgeVolume(by: 0.1)
+                userInteractedWithControls()
+            }
+        }
+        .onKeyPress(.downArrow) {
+            handlePlayerKey {
+                nudgeVolume(by: -0.1)
+                userInteractedWithControls()
+            }
+        }
+        .onAppear {
+            if isActive { playerFocused = true }
+        }
+        #endif
     }
 
     private var volumeControl: some View {
@@ -629,6 +674,20 @@ struct StreamingPlayerView: View {
         #endif
     }
 
+    #if os(macOS)
+    private func handlePlayerKey(_ action: () -> Void) -> KeyPress.Result {
+        guard isActive else { return .ignored }
+        action()
+        return .handled
+    }
+
+    private func nudgeVolume(by delta: Float) {
+        let stepped = ((volume + delta) * 10).rounded() / 10
+        volume = min(1, max(0, stepped))
+        applyVolume()
+    }
+    #endif
+
     private func toggleFullscreen() {
         // In-app expand of the player canvas (same surface). Do not use
         // NSWindow.toggleFullScreen — that fullscreen the whole app chrome.
@@ -638,6 +697,9 @@ struct StreamingPlayerView: View {
     }
 
     private func handleCanvasTap() {
+        #if os(macOS)
+        playerFocused = true
+        #endif
         if showAudioTrackMenu {
             showAudioTrackMenu = false
             userInteractedWithControls()
