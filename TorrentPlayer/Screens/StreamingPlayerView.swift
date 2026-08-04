@@ -146,48 +146,11 @@ struct StreamingPlayerView: View {
         .persistentSystemOverlays(isFullscreen ? .hidden : .automatic)
         #endif
         #if os(macOS)
-        .focusable()
-        .focused($playerFocused)
-        .onKeyPress(.space) {
-            guard isActive else { return .ignored }
-            userInteractedWithControls()
-            togglePlayPause()
-            return .handled
-        }
-        .onKeyPress(.leftArrow) {
-            guard isActive else { return .ignored }
-            userInteractedWithControls()
-            skip(by: -10)
-            return .handled
-        }
-        .onKeyPress(.rightArrow) {
-            guard isActive else { return .ignored }
-            userInteractedWithControls()
-            skip(by: 10)
-            return .handled
-        }
-        .onKeyPress(.upArrow) {
-            guard isActive else { return .ignored }
-            volume = min(1, volume + 0.1)
-            applyVolume()
-            userInteractedWithControls()
-            return .handled
-        }
-        .onKeyPress(.downArrow) {
-            guard isActive else { return .ignored }
-            volume = max(0, volume - 0.1)
-            applyVolume()
-            userInteractedWithControls()
-            return .handled
-        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
             reattachVideoAfterWindowFullscreen(note)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
             reattachVideoAfterWindowFullscreen(note)
-        }
-        .onAppear {
-            if isActive { playerFocused = true }
         }
         #endif
         #if os(macOS) || os(iOS)
@@ -344,6 +307,45 @@ struct StreamingPlayerView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeInOut(duration: 0.25), value: controlsVisible)
+        #if os(macOS)
+        // Keys live on the canvas so ScrollView can still use arrows when
+        // focus is on stats / stream info below the video.
+        .focusable()
+        .focused($playerFocused)
+        .onKeyPress(.space) {
+            handlePlayerKey {
+                userInteractedWithControls()
+                togglePlayPause()
+            }
+        }
+        .onKeyPress(.leftArrow) {
+            handlePlayerKey {
+                userInteractedWithControls()
+                skip(by: -10)
+            }
+        }
+        .onKeyPress(.rightArrow) {
+            handlePlayerKey {
+                userInteractedWithControls()
+                skip(by: 10)
+            }
+        }
+        .onKeyPress(.upArrow) {
+            handlePlayerKey {
+                nudgeVolume(by: 0.1)
+                userInteractedWithControls()
+            }
+        }
+        .onKeyPress(.downArrow) {
+            handlePlayerKey {
+                nudgeVolume(by: -0.1)
+                userInteractedWithControls()
+            }
+        }
+        .onAppear {
+            if isActive { playerFocused = true }
+        }
+        #endif
     }
 
     private var volumeControl: some View {
@@ -672,6 +674,20 @@ struct StreamingPlayerView: View {
         #endif
     }
 
+    #if os(macOS)
+    private func handlePlayerKey(_ action: () -> Void) -> KeyPress.Result {
+        guard isActive else { return .ignored }
+        action()
+        return .handled
+    }
+
+    private func nudgeVolume(by delta: Float) {
+        let stepped = ((volume + delta) * 10).rounded() / 10
+        volume = min(1, max(0, stepped))
+        applyVolume()
+    }
+    #endif
+
     private func toggleFullscreen() {
         // In-app expand of the player canvas (same surface). Do not use
         // NSWindow.toggleFullScreen — that fullscreen the whole app chrome.
@@ -681,6 +697,9 @@ struct StreamingPlayerView: View {
     }
 
     private func handleCanvasTap() {
+        #if os(macOS)
+        playerFocused = true
+        #endif
         if showAudioTrackMenu {
             showAudioTrackMenu = false
             userInteractedWithControls()
