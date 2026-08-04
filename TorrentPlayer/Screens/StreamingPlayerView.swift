@@ -166,6 +166,20 @@ struct StreamingPlayerView: View {
             skip(by: 10)
             return .handled
         }
+        .onKeyPress(.upArrow) {
+            guard isActive else { return .ignored }
+            volume = min(1, volume + 0.1)
+            applyVolume()
+            userInteractedWithControls()
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            guard isActive else { return .ignored }
+            volume = max(0, volume - 0.1)
+            applyVolume()
+            userInteractedWithControls()
+            return .handled
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
             reattachVideoAfterWindowFullscreen(note)
         }
