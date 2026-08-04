@@ -34,6 +34,9 @@ struct StreamingPlayerView: View {
     @State private var controlsHideToken = UUID()
     @State private var audioTrackOptions: [AudioTrackOption] = []
     @State private var showAudioTrackMenu = false
+    #if os(macOS)
+    @FocusState private var playerFocused: Bool
+    #endif
     #if os(macOS) || os(iOS)
     @State private var player: AVPlayer?
     @State private var vlcPlayer: Player?
@@ -143,11 +146,34 @@ struct StreamingPlayerView: View {
         .persistentSystemOverlays(isFullscreen ? .hidden : .automatic)
         #endif
         #if os(macOS)
+        .focusable()
+        .focused($playerFocused)
+        .onKeyPress(.space) {
+            guard isActive else { return .ignored }
+            userInteractedWithControls()
+            togglePlayPause()
+            return .handled
+        }
+        .onKeyPress(.leftArrow) {
+            guard isActive else { return .ignored }
+            userInteractedWithControls()
+            skip(by: -10)
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            guard isActive else { return .ignored }
+            userInteractedWithControls()
+            skip(by: 10)
+            return .handled
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
             reattachVideoAfterWindowFullscreen(note)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
             reattachVideoAfterWindowFullscreen(note)
+        }
+        .onAppear {
+            if isActive { playerFocused = true }
         }
         #endif
         #if os(macOS) || os(iOS)
@@ -168,6 +194,9 @@ struct StreamingPlayerView: View {
             rebuildPlayer(with: url)
         }
         .onChange(of: isActive) { _, active in
+            #if os(macOS)
+            playerFocused = active
+            #endif
             if active {
                 if engine.selectedFileID != nil, engine.playbackURL == nil {
                     Task { await engine.preparePlayback() }
