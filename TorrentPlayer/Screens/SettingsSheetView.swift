@@ -16,6 +16,9 @@ struct SettingsSheetView: View {
     @Environment(TorrentEngine.self) private var engine
     @Environment(\.dismiss) private var dismiss
 
+    @AppStorage(TorrentEngine.metadataTimeoutSecondsKey)
+    private var metadataTimeoutSeconds = TorrentEngine.defaultMetadataTimeoutSeconds
+
     @State private var diskUsageBytes: Int64 = 0
     @State private var statusMessage: String?
     @State private var isClearing = false
@@ -89,6 +92,8 @@ struct SettingsSheetView: View {
                         }
                     }
 
+                    metadataTimeoutCard
+
                     VStack(spacing: KTSpacing.sm) {
                         BrutalSecondaryButton(
                             title: isClearing ? "Working…" : "Clear Downloads",
@@ -143,6 +148,44 @@ struct SettingsSheetView: View {
         #if os(macOS)
         .frame(minWidth: 480, minHeight: 420)
         #endif
+    }
+
+    private var metadataTimeoutCard: some View {
+        VStack(alignment: .leading, spacing: KTSpacing.sm) {
+            Text("Metadata Timeout")
+                .font(KTTypography.labelCaps())
+                .tracking(1.1)
+                .foregroundStyle(KTColor.outline)
+
+            Text("How long to wait for magnet metadata before giving up.")
+                .font(KTTypography.technicalSM())
+                .foregroundStyle(KTColor.onSurfaceVariant)
+
+            HStack(spacing: KTSpacing.xs) {
+                ForEach(TorrentEngine.metadataTimeoutOptions, id: \.self) { seconds in
+                    let selected = metadataTimeoutSeconds == seconds
+                    Button {
+                        metadataTimeoutSeconds = seconds
+                    } label: {
+                        Text("\(seconds)s")
+                            .font(KTTypography.labelCaps())
+                            .textCase(.uppercase)
+                            .tracking(1.1)
+                            .foregroundStyle(selected ? KTColor.onPrimary : KTColor.onBackground)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, KTSpacing.sm)
+                            .background(selected ? KTColor.primary : KTColor.surface)
+                            .thickBorder()
+                    }
+                    .buttonStyle(BrutalPressStyle())
+                }
+            }
+        }
+        .padding(KTSpacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(KTColor.surface)
+        .thickBorder()
+        .hardShadow()
     }
 
     private func pathCard(

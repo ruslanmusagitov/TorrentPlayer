@@ -150,19 +150,40 @@ final class TorrentEngine {
     private var resumePersistenceEnabled = true
     #endif
 
-    private let metadataTimeoutSeconds: Int
+    /// Optional override for tests; production reads `UserDefaults` via `currentMetadataTimeoutSeconds`.
+    private let metadataTimeoutSecondsOverride: Int?
     private let streamingLeadBytes: Int64
     private let streamingLeadTimeoutSeconds: Int
     private static let resumePersistInterval: Duration = .seconds(5)
 
+    static let metadataTimeoutSecondsKey = "metadataTimeoutSeconds"
+    static let metadataTimeoutOptions = [10, 30, 60, 120]
+    static let defaultMetadataTimeoutSeconds = 10
+
+    /// Seconds to wait for magnet metadata. Settings picker writes the same UserDefaults key.
+    static func currentMetadataTimeoutSeconds(
+        defaults: UserDefaults = .standard
+    ) -> Int {
+        guard let stored = defaults.object(forKey: metadataTimeoutSecondsKey) as? Int,
+              metadataTimeoutOptions.contains(stored)
+        else {
+            return defaultMetadataTimeoutSeconds
+        }
+        return stored
+    }
+
     init(
-        metadataTimeoutSeconds: Int = 10,
+        metadataTimeoutSeconds: Int? = nil,
         streamingLeadBytes: Int64 = 2 * 1024 * 1024,
         streamingLeadTimeoutSeconds: Int = 120
     ) {
-        self.metadataTimeoutSeconds = metadataTimeoutSeconds
+        self.metadataTimeoutSecondsOverride = metadataTimeoutSeconds
         self.streamingLeadBytes = streamingLeadBytes
         self.streamingLeadTimeoutSeconds = streamingLeadTimeoutSeconds
+    }
+
+    private var metadataTimeoutSeconds: Int {
+        metadataTimeoutSecondsOverride ?? Self.currentMetadataTimeoutSeconds()
     }
 
     var isLoadingTorrent: Bool {
