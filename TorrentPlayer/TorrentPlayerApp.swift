@@ -24,18 +24,21 @@ struct TorrentPlayerApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
-        #if os(macOS)
-        // Single window: Dock/Finder opens of .torrent files reuse it instead of
-        // spawning another window (and another player on the shared engine).
-        Window("TorrentPlayer", id: "main") {
-            rootView
-        }
-        .modelContainer(for: TorrentHistoryEntry.self)
-        #else
         WindowGroup {
             rootView
+                #if os(macOS)
+                // Dock/Finder opens of .torrent files go to the existing window instead of
+                // spawning another one (and another player on the shared engine).
+                .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
+                #endif
         }
         .modelContainer(for: TorrentHistoryEntry.self)
+        #if os(macOS)
+        .handlesExternalEvents(matching: ["*"])
+        .commands {
+            // One player per engine: no File > New Window. Closing the window keeps the app running.
+            CommandGroup(replacing: .newItem) {}
+        }
         #endif
     }
 

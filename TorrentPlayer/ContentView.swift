@@ -59,16 +59,16 @@ struct ContentView: View {
         #if os(macOS)
         .frame(minWidth: 900, minHeight: 640)
         #endif
-        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
-            if let url = Self.torrentURL(from: activity) {
-                IncomingTorrentFiles.handle([url])
-            }
-        }
         .onReceive(NotificationCenter.default.publisher(for: IncomingTorrentFiles.didReceive)) { _ in
             Task { await consumePendingTorrentFiles() }
         }
-        .onChange(of: engine.phase) { _, _ in
-            guard engine.isOperational, IncomingTorrentFiles.hasPending else { return }
+        // Retry queued files once the engine frees up, or drop them if it never will.
+        .onChange(of: engine.canAddTorrent) { _, ready in
+            guard ready, IncomingTorrentFiles.hasPending else { return }
+            Task { await consumePendingTorrentFiles() }
+        }
+        .onChange(of: engine.isSessionUnavailable) { _, unavailable in
+            guard unavailable, IncomingTorrentFiles.hasPending else { return }
             Task { await consumePendingTorrentFiles() }
         }
         .task {
@@ -122,16 +122,13 @@ struct ContentView: View {
     private func consumePendingTorrentFiles() async {
         await IncomingTorrentFiles.consumeExclusively {
             while IncomingTorrentFiles.hasPending {
-                guard await waitUntilEngineOperational() else {
-                    if case .unsupportedPlatform = engine.phase {
-                        IncomingTorrentFiles.discardLatest()
-                        TPLog.error("dropped queued torrent file: torrent engine unavailable")
-                    } else {
-                        TPLog.error("engine not ready; keeping queued torrent file")
-                    }
+                if engine.isSessionUnavailable {
+                    IncomingTorrentFiles.discardLatest()
+                    TPLog.error("dropped queued torrent file: torrent engine unavailable")
                     return
                 }
-                guard let url = IncomingTorrentFiles.takeLatest() else { return }
+                // Not ready yet: the file stays queued and onChange(canAddTorrent) retries.
+                guard engine.canAddTorrent, let url = IncomingTorrentFiles.takeLatest() else { return }
                 await openIncomingURL(url)
             }
         }
@@ -148,29 +145,6 @@ struct ContentView: View {
         } catch {
             // Engine already set .error for UI feedback (keeps previous torrent if any).
         }
-    }
-
-    private func waitUntilEngineOperational(timeout: Duration = .seconds(15)) async -> Bool {
-        let deadline = ContinuousClock.now + timeout
-        while ContinuousClock.now < deadline {
-            if engine.isOperational { return true }
-            if case .unsupportedPlatform = engine.phase { return false }
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-        return engine.isOperational
-    }
-
-    private static func torrentURL(from activity: NSUserActivity) -> URL? {
-        if let url = activity.webpageURL, IncomingTorrentFiles.isTorrentFileURL(url) {
-            return url
-        }
-        #if os(macOS)
-        if let url = activity.userInfo?[NSUserActivityDocumentURLKey] as? URL,
-           IncomingTorrentFiles.isTorrentFileURL(url) {
-            return url
-        }
-        #endif
-        return nil
     }
 }
 

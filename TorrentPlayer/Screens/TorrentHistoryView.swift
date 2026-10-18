@@ -176,7 +176,7 @@ struct TorrentHistoryView: View {
         defer { resumingInfoHash = nil }
 
         do {
-            try await TorrentHistoryEntry.resume(entry, using: engine, in: modelContext)
+            try await TorrentHistoryEntry.resume(entry, using: engine)
             onResume?()
         } catch {
             resumeError = error.localizedDescription

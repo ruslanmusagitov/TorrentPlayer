@@ -73,6 +73,17 @@ final class TorrentHistoryEntry {
         )
     }
 
+    /// Loads a magnet into the engine and records history on success.
+    @MainActor
+    static func addMagnet(
+        _ uri: String,
+        using engine: TorrentEngine,
+        in context: ModelContext
+    ) async throws {
+        try await engine.addMagnet(uri)
+        recordActiveLoad(from: engine, in: context)
+    }
+
     /// Loads a .torrent file into the engine and records history on success.
     @MainActor
     static func addTorrentFile(
@@ -80,14 +91,30 @@ final class TorrentHistoryEntry {
         using engine: TorrentEngine,
         in context: ModelContext
     ) async throws {
-        try await engine.addTorrentFile(url: url)
-        if let data = engine.lastTorrentFileData, let torrent = engine.activeTorrent {
+        let data = try await engine.addTorrentFile(url: url)
+        if let torrent = engine.activeTorrent {
             do {
                 try TorrentHistoryFileStore.store(data: data, infoHash: torrent.infoHash)
             } catch {
                 TPLog.error("history torrent copy failed: \(error.localizedDescription)")
             }
         }
+        recordActiveLoad(from: engine, in: context)
+    }
+
+    /// Reopens a history row: the stored .torrent copy if present, otherwise the magnet.
+    /// Leaves the row (order, magnet URI) and the stored copy untouched, like a magnet resume.
+    @MainActor
+    static func resume(_ entry: TorrentHistoryEntry, using engine: TorrentEngine) async throws {
+        if let fileURL = TorrentHistoryFileStore.fileURLIfPresent(for: entry.infoHash) {
+            try await engine.addTorrentFile(url: fileURL)
+            return
+        }
+        try await engine.addMagnet(entry.magnetURI)
+    }
+
+    @MainActor
+    private static func recordActiveLoad(from engine: TorrentEngine, in context: ModelContext) {
         do {
             try recordLoad(
                 magnetURI: engine.lastMagnetURI,
@@ -97,20 +124,6 @@ final class TorrentHistoryEntry {
         } catch {
             TPLog.error("history record failed: \(error.localizedDescription)")
         }
-    }
-
-    /// Reopens a history row: the stored .torrent copy if present, otherwise the magnet.
-    @MainActor
-    static func resume(
-        _ entry: TorrentHistoryEntry,
-        using engine: TorrentEngine,
-        in context: ModelContext
-    ) async throws {
-        if let fileURL = TorrentHistoryFileStore.fileURLIfPresent(for: entry.infoHash) {
-            try await addTorrentFile(url: fileURL, using: engine, in: context)
-            return
-        }
-        try await engine.addMagnet(entry.magnetURI)
     }
 
     static func removeStoredTorrentFile(infoHash: String) {

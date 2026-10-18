@@ -9,6 +9,7 @@ enum TorrentEngineError: LocalizedError, Equatable {
     case emptyMagnet
     case invalidTorrentFile
     case sessionNotReady
+    case addInProgress
     case unsupportedPlatform
     case metadataTimeout
     case noSelectedFile
@@ -23,6 +24,8 @@ enum TorrentEngineError: LocalizedError, Equatable {
             "The torrent file is invalid or unreadable."
         case .sessionNotReady:
             "Torrent session is not ready yet."
+        case .addInProgress:
+            "Another torrent is still loading."
         case .unsupportedPlatform:
             "Torrent engine is not available on this platform."
         case .metadataTimeout:

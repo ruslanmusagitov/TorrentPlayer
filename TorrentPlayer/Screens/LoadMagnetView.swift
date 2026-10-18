@@ -240,8 +240,7 @@ struct LoadMagnetView: View {
         defer { isLoading = false }
 
         do {
-            try await engine.addMagnet(magnetText)
-            recordHistory()
+            try await TorrentHistoryEntry.addMagnet(magnetText, using: engine, in: modelContext)
             onLoad?()
         } catch {
             // Engine already set .error for UI feedback (keeps previous torrent if any).
@@ -258,18 +257,6 @@ struct LoadMagnetView: View {
             onLoad?()
         } catch {
             // Engine already set .error for UI feedback (keeps previous torrent if any).
-        }
-    }
-
-    private func recordHistory() {
-        do {
-            try TorrentHistoryEntry.recordLoad(
-                magnetURI: engine.lastMagnetURI,
-                torrent: engine.activeTorrent,
-                in: modelContext
-            )
-        } catch {
-            TPLog.error("history record failed: \(error.localizedDescription)")
         }
     }
 }

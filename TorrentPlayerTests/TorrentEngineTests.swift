@@ -482,7 +482,7 @@ struct TorrentEngineTests {
         let fileURL = try TorrentFileFixture.writeTempFile()
         defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
 
-        try await engine.addTorrentFile(url: fileURL)
+        let returnedData = try await engine.addTorrentFile(url: fileURL)
 
         guard case let .loaded(torrent) = engine.phase else {
             Issue.record("Expected loaded phase after torrent file, got \(engine.phase)")
@@ -494,7 +494,8 @@ struct TorrentEngineTests {
         #expect(engine.lastMagnetURI?.contains("xt=urn:btih:") == true)
         #expect(engine.lastMagnetURI?.contains("tr=") == true)
         let torrentData = try Data(contentsOf: fileURL)
-        #expect(engine.lastTorrentFileData == torrentData)
+        #expect(returnedData == torrentData)
+        #expect(engine.canAddTorrent)
         #else
         #expect(Bool(true))
         #endif
@@ -527,6 +528,68 @@ struct TorrentEngineTests {
         }
         #expect(engine.activeTorrent == previous)
         #expect(engine.selectedFileID == previous.defaultSelectedFileID)
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+
+    @Test @MainActor func canAddTorrentTracksSessionAndAddInFlight() async throws {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        #expect(!engine.canAddTorrent)
+        #expect(!engine.isSessionUnavailable)
+
+        await engine.bootstrap()
+        #expect(engine.canAddTorrent)
+
+        let fileURL = try TorrentFileFixture.writeTempFile()
+        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+
+        let first = Task { try await engine.addTorrentFile(url: fileURL) }
+        // Let the first add start and suspend on its off-main file read.
+        while !engine.isLoadingTorrent {
+            await Task.yield()
+        }
+        #expect(!engine.canAddTorrent)
+        await #expect(throws: TorrentEngineError.addInProgress) {
+            try await engine.addMagnet("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567")
+        }
+
+        _ = try await first.value
+        #expect(engine.canAddTorrent)
+        guard case .loaded = engine.phase else {
+            Issue.record("Rejected concurrent add must not disturb the first one, got \(engine.phase)")
+            return
+        }
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+
+    @Test @MainActor func invalidTorrentFileKeepsPreviousHandleLive() async throws {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        await engine.bootstrap()
+
+        let fileURL = try TorrentFileFixture.writeTempFile()
+        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+        try await engine.addTorrentFile(url: fileURL)
+        await engine.refreshDownloadStatus()
+        let piecesTotal = engine.piecesTotal
+        #expect(piecesTotal > 0)
+
+        let badURL = try TorrentFileFixture.writeTempFile(data: Data("not-a-torrent".utf8))
+        defer { try? FileManager.default.removeItem(at: badURL.deletingLastPathComponent()) }
+        await #expect(throws: TorrentEngineError.invalidTorrentFile) {
+            try await engine.addTorrentFile(url: badURL)
+        }
+        await #expect(throws: (any Error).self) {
+            try await engine.addMagnet("not-a-magnet")
+        }
+
+        // Status still comes from the previous torrent's handle, not a cleared one.
+        await engine.refreshDownloadStatus()
+        #expect(engine.piecesTotal == piecesTotal)
         #else
         #expect(Bool(true))
         #endif

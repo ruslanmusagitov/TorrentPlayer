@@ -157,25 +157,32 @@ struct TorrentHistoryEntryTests {
             let context = try makeContext()
             let fileURL = try TorrentFileFixture.writeTempFile()
             defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+            let original = try Data(contentsOf: fileURL)
 
             try await TorrentHistoryEntry.addTorrentFile(url: fileURL, using: engine, in: context)
 
             let entries = try context.fetch(FetchDescriptor<TorrentHistoryEntry>())
             #expect(entries.count == 1)
             let stored = try #require(TorrentHistoryFileStore.fileURLIfPresent(for: entries[0].infoHash))
-            #expect(try Data(contentsOf: stored) == engine.lastTorrentFileData)
+            #expect(try Data(contentsOf: stored) == original)
+            let addedAt = entries[0].addedAt
+            let magnetURI = entries[0].magnetURI
 
             try FileManager.default.removeItem(at: fileURL)
 
             let engine2 = TorrentEngine()
             await engine2.bootstrap()
-            try await TorrentHistoryEntry.resume(entries[0], using: engine2, in: context)
+            try await TorrentHistoryEntry.resume(entries[0], using: engine2)
             guard case let .loaded(torrent) = engine2.phase else {
                 Issue.record("Expected loaded phase after history resume, got \(engine2.phase)")
                 return
             }
             #expect(torrent.displayName == TorrentFileFixture.fileName)
             #expect(torrent.infoHash == entries[0].infoHash)
+            // Resume reopens the row without bumping it or rewriting its magnet.
+            #expect(entries[0].addedAt == addedAt)
+            #expect(entries[0].magnetURI == magnetURI)
+            #expect(FileManager.default.fileExists(atPath: stored.path))
         }
         #else
         #expect(Bool(true))
