@@ -147,7 +147,6 @@ struct ContentView: View {
             selection = .files
         } catch {
             // Engine already set .error for UI feedback (keeps previous torrent if any).
-            // Keep Inbox/staging copies so a broken file can be opened again.
         }
     }
 

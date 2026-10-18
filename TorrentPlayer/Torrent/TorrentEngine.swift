@@ -301,6 +301,7 @@ final class TorrentEngine {
 
     func addTorrentFile(url: URL) async throws {
         #if os(macOS) || os(iOS)
+        defer { IncomingTorrentFiles.removeConsumedCopyIfNeeded(url) }
         guard url.isFileURL else {
             phase = .error(TorrentEngineError.invalidTorrentFile.localizedDescription)
             throw TorrentEngineError.invalidTorrentFile
@@ -324,7 +325,6 @@ final class TorrentEngine {
             let params = AddTorrentParams(torrentInfo: info, savePath: downloads.path)
             return (params, Self.magnetURI(from: info))
         }
-        IncomingTorrentFiles.removeConsumedCopyIfNeeded(url)
         #else
         phase = .error(TorrentEngineError.unsupportedPlatform.localizedDescription)
         throw TorrentEngineError.unsupportedPlatform

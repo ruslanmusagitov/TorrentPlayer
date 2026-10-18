@@ -629,7 +629,7 @@ struct IncomingTorrentFilesTests {
         #expect(IncomingTorrentFiles.takeLatest() == second)
     }
 
-    @Test func addTorrentFileKeepsStagingCopyWhenLoadFails() async throws {
+    @Test func addTorrentFileDeletesStagingCopyWhenLoadFails() async throws {
         #if os(macOS) || os(iOS)
         let engine = TorrentEngine()
         await engine.bootstrap()
@@ -640,12 +640,10 @@ struct IncomingTorrentFilesTests {
         defer { try? FileManager.default.removeItem(at: source) }
 
         let staged = try IncomingTorrentFiles.persistDroppedFile(source)
-        defer { IncomingTorrentFiles.removeConsumedCopyIfNeeded(staged) }
-
         await #expect(throws: TorrentEngineError.invalidTorrentFile) {
             try await engine.addTorrentFile(url: staged)
         }
-        #expect(FileManager.default.fileExists(atPath: staged.path))
+        #expect(!FileManager.default.fileExists(atPath: staged.path))
         #else
         #expect(Bool(true))
         #endif
