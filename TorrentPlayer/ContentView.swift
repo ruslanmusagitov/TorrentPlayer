@@ -15,6 +15,8 @@ struct ContentView: View {
     /// In-place player fullscreen — hides shell chrome so the same video surface can expand.
     @State private var playerFullscreen = false
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(TorrentEngine.self) private var engine
+    @Environment(\.modelContext) private var modelContext
 
     private var usesSideNav: Bool {
         #if os(macOS)
@@ -57,6 +59,17 @@ struct ContentView: View {
         #if os(macOS)
         .frame(minWidth: 900, minHeight: 640)
         #endif
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            if let url = Self.torrentURL(from: activity) {
+                IncomingTorrentFiles.handle([url])
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: IncomingTorrentFiles.didReceive)) { _ in
+            Task { await consumePendingTorrentFiles() }
+        }
+        .task {
+            await consumePendingTorrentFiles()
+        }
     }
 
     @ViewBuilder
@@ -100,6 +113,57 @@ struct ContentView: View {
                 selection = .files
             }
         }
+    }
+
+    private func consumePendingTorrentFiles() async {
+        let urls = IncomingTorrentFiles.take()
+        for url in urls {
+            await openIncomingURL(url)
+        }
+    }
+
+    private func openIncomingURL(_ url: URL) async {
+        guard IncomingTorrentFiles.isTorrentFileURL(url) else { return }
+        guard await waitUntilEngineOperational() else { return }
+
+        do {
+            try await engine.addTorrentFile(url: url)
+            do {
+                try TorrentHistoryEntry.recordLoad(
+                    magnetURI: engine.lastMagnetURI,
+                    torrent: engine.activeTorrent,
+                    in: modelContext
+                )
+            } catch {
+                TPLog.error("history record failed: \(error.localizedDescription)")
+            }
+            selection = .files
+        } catch {
+            // Engine already set .error for UI feedback (keeps previous torrent if any).
+        }
+    }
+
+    private func waitUntilEngineOperational(timeout: Duration = .seconds(15)) async -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if engine.isOperational { return true }
+            if case .unsupportedPlatform = engine.phase { return false }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return engine.isOperational
+    }
+
+    private static func torrentURL(from activity: NSUserActivity) -> URL? {
+        if let url = activity.webpageURL, IncomingTorrentFiles.isTorrentFileURL(url) {
+            return url
+        }
+        #if os(macOS)
+        if let url = activity.userInfo?[NSUserActivityDocumentURLKey] as? URL,
+           IncomingTorrentFiles.isTorrentFileURL(url) {
+            return url
+        }
+        #endif
+        return nil
     }
 }
 

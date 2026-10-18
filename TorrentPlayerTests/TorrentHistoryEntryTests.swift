@@ -106,6 +106,29 @@ struct TorrentHistoryEntryTests {
         #expect(entries.isEmpty)
     }
 
+    @Test func recordLoadPersistsMagnetDerivedFromTorrentFile() throws {
+        let context = try makeContext()
+        let magnet =
+            "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12"
+            + "&dn=testfile.txt&tr=skip://tracker.invalid/announce"
+        try TorrentHistoryEntry.recordLoad(
+            magnetURI: magnet,
+            torrent: ActiveTorrent(
+                displayName: "testfile.txt",
+                infoHash: "abcdef1234567890abcdef1234567890abcdef12",
+                totalSize: 1024,
+                files: []
+            ),
+            in: context
+        )
+
+        let entries = try context.fetch(FetchDescriptor<TorrentHistoryEntry>())
+        #expect(entries.count == 1)
+        #expect(entries[0].displayName == "testfile.txt")
+        #expect(entries[0].magnetURI.contains("xt=urn:btih:"))
+        #expect(entries[0].magnetURI.contains("tr="))
+    }
+
     @Test func displayHelpersMatchDesignConventions() {
         let video = TorrentHistoryEntry(
             infoHash: "abcdef1234567890abcdef1234567890abcdef12",

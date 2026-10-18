@@ -460,4 +460,105 @@ struct TorrentEngineTests {
         #expect(Bool(true))
         #endif
     }
+
+    @Test func magnetURIFromTorrentInfoIncludesHashAndTracker() throws {
+        #if os(macOS) || os(iOS)
+        let data = TorrentFileFixture.makeSingleFileTorrentData()
+        let info = try TorrentInfo.parse(from: data)
+        let uri = TorrentEngine.magnetURI(from: info)
+        #expect(uri.hasPrefix("magnet:?xt=urn:btih:"))
+        #expect(uri.contains("tr="))
+        #expect(uri.contains("dn=testfile.txt"))
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+
+    @Test @MainActor func addTorrentFileLoadsMetadataWithoutNetwork() async throws {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        await engine.bootstrap()
+
+        let fileURL = try TorrentFileFixture.writeTempFile()
+        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+
+        try await engine.addTorrentFile(url: fileURL)
+
+        guard case let .loaded(torrent) = engine.phase else {
+            Issue.record("Expected loaded phase after torrent file, got \(engine.phase)")
+            return
+        }
+        #expect(torrent.displayName == TorrentFileFixture.fileName)
+        #expect(torrent.files.count == 1)
+        #expect(torrent.files[0].path == TorrentFileFixture.fileName)
+        #expect(engine.lastMagnetURI?.contains("xt=urn:btih:") == true)
+        #expect(engine.lastMagnetURI?.contains("tr=") == true)
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+
+    @Test @MainActor func addTorrentFileRejectsInvalidDataWhileKeepingPreviousTorrent() async throws {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        await engine.bootstrap()
+
+        let previous = TorrentFileFormatting.makeActiveTorrent(
+            displayName: "Previous",
+            infoHash: "prevhash",
+            totalSize: 1_000,
+            fileEntries: [("main.mkv", 1_000)]
+        )
+        engine.applyLoadedTorrentForTesting(previous)
+
+        let fileURL = try TorrentFileFixture.writeTempFile(data: Data("not-a-torrent".utf8))
+        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+
+        await #expect(throws: TorrentEngineError.invalidTorrentFile) {
+            try await engine.addTorrentFile(url: fileURL)
+        }
+
+        if case let .error(message) = engine.phase {
+            #expect(message == TorrentEngineError.invalidTorrentFile.localizedDescription)
+        } else {
+            Issue.record("Expected error phase after invalid torrent file, got \(engine.phase)")
+        }
+        #expect(engine.activeTorrent == previous)
+        #expect(engine.selectedFileID == previous.defaultSelectedFileID)
+        #else
+        #expect(Bool(true))
+        #endif
+    }
 }
+
+#if os(macOS) || os(iOS)
+private enum TorrentFileFixture {
+    static let announceURL = "skip://tracker.invalid/announce"
+    static let fileName = "testfile.txt"
+
+    static func makeSingleFileTorrentData() -> Data {
+        let encoder = BencodeEncoder()
+        let pieces = Data(repeating: 0xAB, count: 20)
+        let info: BencodeValue = .dictionary([
+            (key: Data("length".utf8), value: .integer(1024)),
+            (key: Data("name".utf8), value: .string(Data(fileName.utf8))),
+            (key: Data("piece length".utf8), value: .integer(262144)),
+            (key: Data("pieces".utf8), value: .string(pieces)),
+        ])
+        let root: BencodeValue = .dictionary([
+            (key: Data("announce".utf8), value: .string(Data(announceURL.utf8))),
+            (key: Data("info".utf8), value: info),
+        ])
+        return encoder.encode(root)
+    }
+
+    static func writeTempFile(data: Data = TorrentFileFixture.makeSingleFileTorrentData()) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TorrentPlayerTorrent-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("fixture.torrent")
+        try data.write(to: url)
+        return url
+    }
+}
+#endif

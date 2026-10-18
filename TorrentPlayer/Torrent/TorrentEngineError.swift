@@ -7,6 +7,7 @@ import Foundation
 
 enum TorrentEngineError: LocalizedError, Equatable {
     case emptyMagnet
+    case invalidTorrentFile
     case sessionNotReady
     case unsupportedPlatform
     case metadataTimeout
@@ -18,6 +19,8 @@ enum TorrentEngineError: LocalizedError, Equatable {
         switch self {
         case .emptyMagnet:
             "Magnet link is empty."
+        case .invalidTorrentFile:
+            "The torrent file is invalid or unreadable."
         case .sessionNotReady:
             "Torrent session is not ready yet."
         case .unsupportedPlatform:

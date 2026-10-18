@@ -289,6 +289,69 @@ final class TorrentEngine {
         }
 
         #if os(macOS) || os(iOS)
+        try await addPrepared(logLabel: "addMagnet") { downloads in
+            let params = try AddTorrentParams.fromMagnet(trimmed, savePath: downloads.path)
+            return (params, trimmed)
+        }
+        #else
+        phase = .error(TorrentEngineError.unsupportedPlatform.localizedDescription)
+        throw TorrentEngineError.unsupportedPlatform
+        #endif
+    }
+
+    func addTorrentFile(url: URL) async throws {
+        #if os(macOS) || os(iOS)
+        try await addPrepared(logLabel: "addTorrentFile") { downloads in
+            let data: Data
+            do {
+                data = try Self.readTorrentFileData(from: url)
+            } catch {
+                throw TorrentEngineError.invalidTorrentFile
+            }
+            let info: TorrentInfo
+            do {
+                info = try TorrentInfo.parse(from: data)
+            } catch {
+                throw TorrentEngineError.invalidTorrentFile
+            }
+            let params = AddTorrentParams(torrentInfo: info, savePath: downloads.path)
+            return (params, Self.magnetURI(from: info))
+        }
+        #else
+        phase = .error(TorrentEngineError.unsupportedPlatform.localizedDescription)
+        throw TorrentEngineError.unsupportedPlatform
+        #endif
+    }
+
+    #if os(macOS) || os(iOS)
+    nonisolated static func magnetURI(from info: TorrentInfo) -> String {
+        var trackers = info.announceList.flatMap { $0 }
+        if trackers.isEmpty, let announce = info.announceURL {
+            trackers = [announce]
+        }
+        var seen = Set<String>()
+        trackers = trackers.filter { seen.insert($0).inserted }
+        return MagnetLink(
+            infoHash: info.infoHash,
+            displayName: info.name,
+            trackers: trackers
+        ).uri
+    }
+
+    private static func readTorrentFileData(from url: URL) throws -> Data {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessed {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        return try Data(contentsOf: url)
+    }
+
+    private func addPrepared(
+        logLabel: String,
+        makeParams: (URL) throws -> (AddTorrentParams, String)
+    ) async throws {
         guard let session else {
             phase = .error(TorrentEngineError.sessionNotReady.localizedDescription)
             throw TorrentEngineError.sessionNotReady
@@ -303,16 +366,16 @@ final class TorrentEngine {
         phase = .adding
         var pendingInfoHash: InfoHash?
         await Task.yield()
-        TPLog.engine("addMagnet begin uriLen=\(trimmed.count)")
+        TPLog.engine("\(logLabel) begin")
 
         do {
             let downloads = try Self.downloadsDirectory()
-            var params = try AddTorrentParams.fromMagnet(trimmed, savePath: downloads.path)
+            var (params, magnetURI) = try makeParams(downloads)
             guard let infoHash = params.infoHash else {
                 throw AddTorrentError.noInfoHash
             }
             pendingInfoHash = infoHash
-            TPLog.engine("addMagnet infoHash=\(infoHash)")
+            TPLog.engine("\(logLabel) infoHash=\(infoHash)")
 
             if let resume = Self.loadResumeData(infoHash: infoHash) {
                 params.resumeData = resume
@@ -358,7 +421,7 @@ final class TorrentEngine {
             activeTorrent = torrent
             selectedFileID = torrent.defaultSelectedFileID
             activeInfoHash = infoHash
-            lastMagnetURI = trimmed
+            lastMagnetURI = magnetURI
             pendingInfoHash = nil
             lastPersistedPiecesCompleted = -1
             lastResumePersistAt = nil
@@ -395,11 +458,8 @@ final class TorrentEngine {
             )
             throw error
         }
-        #else
-        phase = .error(TorrentEngineError.unsupportedPlatform.localizedDescription)
-        throw TorrentEngineError.unsupportedPlatform
-        #endif
     }
+    #endif
 
     /// Waits for leading sequential bytes, then starts a loopback HTTP server for AVPlayer.
     func preparePlayback() async {

@@ -5,6 +5,7 @@
 
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 #if os(macOS)
 import AppKit
 #endif
@@ -47,6 +48,26 @@ struct TorrentPlayerApp: App {
                 TPLog.bootstrapFileLogging()
                 await engine.bootstrap()
             }
+            .onOpenURL { url in
+                IncomingTorrentFiles.handle([url])
+            }
+            .dropDestination(for: URL.self) { urls, _ in
+                IncomingTorrentFiles.handle(urls)
+                return urls.contains { IncomingTorrentFiles.isTorrentFileURL($0) }
+            }
+            .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                var accepted = false
+                for provider in providers where provider.canLoadObject(ofClass: URL.self) {
+                    accepted = true
+                    _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                        guard let url else { return }
+                        Task { @MainActor in
+                            IncomingTorrentFiles.handle([url])
+                        }
+                    }
+                }
+                return accepted
+            }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .background || phase == .inactive else { return }
                 Task { await engine.persistResumeIfNeeded(force: true) }
@@ -59,6 +80,31 @@ struct TorrentPlayerApp: App {
             #endif
         }
         .modelContainer(for: TorrentHistoryEntry.self)
+    }
+}
+
+@MainActor
+enum IncomingTorrentFiles {
+    static let didReceive = Notification.Name("TorrentPlayer.openTorrentFiles")
+    private static var queued: [URL] = []
+
+    static func isTorrentFileURL(_ url: URL) -> Bool {
+        url.pathExtension.lowercased() == "torrent"
+    }
+
+    static func handle(_ urls: [URL]) {
+        let torrents = urls.filter(isTorrentFileURL).filter { url in
+            !queued.contains(url)
+        }
+        guard !torrents.isEmpty else { return }
+        queued.append(contentsOf: torrents)
+        NotificationCenter.default.post(name: didReceive, object: nil)
+    }
+
+    static func take() -> [URL] {
+        let urls = queued
+        queued.removeAll()
+        return urls
     }
 }
 
@@ -75,6 +121,12 @@ final class TorrentPlayerAppDelegate: NSObject, NSApplicationDelegate {
             window.backgroundColor = LaunchScreenColor.background
             window.isOpaque = true
         }
+    }
+
+    /// Dock / Finder drop onto the app icon. SwiftUI `onOpenURL` often misses this
+    /// when an `NSApplicationDelegateAdaptor` is present.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        IncomingTorrentFiles.handle(urls)
     }
 }
 
