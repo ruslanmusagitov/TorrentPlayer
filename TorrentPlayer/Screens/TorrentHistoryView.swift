@@ -188,7 +188,7 @@ struct TorrentHistoryView: View {
         modelContext.delete(entry)
         do {
             try modelContext.save()
-            TorrentHistoryEntry.removeStoredTorrentFile(infoHash: hash)
+            TorrentHistoryFileStore.remove(infoHash: hash)
         } catch {
             TPLog.error("history delete failed: \(error.localizedDescription)")
         }
@@ -200,7 +200,7 @@ struct TorrentHistoryView: View {
         }
         do {
             try modelContext.save()
-            TorrentHistoryEntry.removeAllStoredTorrentFiles()
+            TorrentHistoryFileStore.removeAll()
         } catch {
             TPLog.error("history clear failed: \(error.localizedDescription)")
         }

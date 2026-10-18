@@ -135,15 +135,12 @@ struct ContentView: View {
     }
 
     private func openIncomingURL(_ url: URL) async {
-        guard IncomingTorrentFiles.isTorrentFileURL(url) else {
-            IncomingTorrentFiles.removeConsumedCopyIfNeeded(url)
-            return
-        }
         do {
             try await TorrentHistoryEntry.addTorrentFile(url: url, using: engine, in: modelContext)
             selection = .files
         } catch {
-            // Engine already set .error for UI feedback (keeps previous torrent if any).
+            // addError or phase == .error is shown on Load. Stay off Files so the message is visible.
+            selection = .load
         }
     }
 }

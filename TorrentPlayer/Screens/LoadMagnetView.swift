@@ -123,18 +123,39 @@ struct LoadMagnetView: View {
         }
     }
 
+    /// Validation failures stay off `phase` so a live torrent remains `.loaded`.
+    private var showsAddError: Bool {
+        guard engine.addError != nil else { return false }
+        switch engine.phase {
+        case .adding, .fetchingMetadata:
+            return false
+        default:
+            return true
+        }
+    }
+
+    /// Message for the load card: a pre-playback rejection, or `phase == .error` after a failed add.
+    private var visibleAddFailure: String? {
+        if showsAddError { return engine.addError }
+        if case let .error(message) = engine.phase { return message }
+        return nil
+    }
+
     private var statusChipColors: (background: Color, foreground: Color) {
+        if showsAddError {
+            return (KTColor.errorContainer, KTColor.error)
+        }
         switch engine.phase {
         case .error:
-            (KTColor.errorContainer, KTColor.error)
+            return (KTColor.errorContainer, KTColor.error)
         case .unsupportedPlatform:
-            (KTColor.secondaryFixed, KTColor.secondary)
+            return (KTColor.secondaryFixed, KTColor.secondary)
         case .ready, .loaded:
-            (KTColor.tertiaryContainer, KTColor.onTertiaryContainer)
+            return (KTColor.tertiaryContainer, KTColor.onTertiaryContainer)
         case .fetchingMetadata, .adding:
-            (KTColor.primaryContainer, KTColor.onPrimary)
+            return (KTColor.primaryContainer, KTColor.onPrimary)
         default:
-            (KTColor.surfaceContainer, KTColor.onSurfaceVariant)
+            return (KTColor.surfaceContainer, KTColor.onSurfaceVariant)
         }
     }
 
@@ -144,34 +165,7 @@ struct LoadMagnetView: View {
             VStack(spacing: KTSpacing.xs) {
                 Image(systemName: "sensor.tag.radiowaves.forward")
                     .font(.system(size: 48, weight: .regular))
-                switch engine.phase {
-                case .fetchingMetadata, .adding:
-                    ProgressView()
-                        .controlSize(.regular)
-                        .tint(.white)
-                    Text("Fetching Metadata…")
-                        .font(KTTypography.technicalSM())
-                        .textCase(.uppercase)
-                        .tracking(2)
-                    Text("Contacting trackers / DHT for file list")
-                        .font(KTTypography.technicalSM())
-                        .opacity(0.8)
-                        .multilineTextAlignment(.center)
-                case let .loaded(torrent):
-                    Text(torrent.displayName.uppercased())
-                        .font(KTTypography.technicalSM())
-                        .multilineTextAlignment(.center)
-                        .lineLimit(3)
-                        .minimumScaleFactor(0.75)
-                    Text("\(torrent.files.count) files • \(torrent.formattedTotalSize.uppercased())")
-                        .font(KTTypography.technicalSM())
-                        .opacity(0.8)
-                    Text(torrent.infoHash)
-                        .font(KTTypography.technicalSM())
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .opacity(0.8)
-                case let .error(message):
+                if let message = visibleAddFailure {
                     Text("LOAD FAILED")
                         .font(KTTypography.technicalSM())
                         .textCase(.uppercase)
@@ -181,14 +175,43 @@ struct LoadMagnetView: View {
                         .multilineTextAlignment(.center)
                         .lineLimit(4)
                         .opacity(0.9)
-                default:
-                    Text("Awaiting Active Stream")
-                        .font(KTTypography.technicalSM())
-                        .textCase(.uppercase)
-                        .tracking(2)
-                    Text("Paste a magnet, open a torrent file, or drop one on the app")
-                        .font(KTTypography.technicalSM())
-                        .opacity(0.8)
+                } else {
+                    switch engine.phase {
+                    case .fetchingMetadata, .adding:
+                        ProgressView()
+                            .controlSize(.regular)
+                            .tint(.white)
+                        Text("Fetching Metadata…")
+                            .font(KTTypography.technicalSM())
+                            .textCase(.uppercase)
+                            .tracking(2)
+                        Text("Contacting trackers / DHT for file list")
+                            .font(KTTypography.technicalSM())
+                            .opacity(0.8)
+                            .multilineTextAlignment(.center)
+                    case let .loaded(torrent):
+                        Text(torrent.displayName.uppercased())
+                            .font(KTTypography.technicalSM())
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                            .minimumScaleFactor(0.75)
+                        Text("\(torrent.files.count) files • \(torrent.formattedTotalSize.uppercased())")
+                            .font(KTTypography.technicalSM())
+                            .opacity(0.8)
+                        Text(torrent.infoHash)
+                            .font(KTTypography.technicalSM())
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .opacity(0.8)
+                    default:
+                        Text("Awaiting Active Stream")
+                            .font(KTTypography.technicalSM())
+                            .textCase(.uppercase)
+                            .tracking(2)
+                        Text("Paste a magnet, open a torrent file, or drop one on the app")
+                            .font(KTTypography.technicalSM())
+                            .opacity(0.8)
+                    }
                 }
             }
             .foregroundStyle(.white)

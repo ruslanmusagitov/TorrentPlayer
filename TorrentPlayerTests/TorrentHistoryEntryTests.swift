@@ -129,6 +129,17 @@ struct TorrentHistoryEntryTests {
         #expect(entries[0].magnetURI.contains("tr="))
     }
 
+    @Test func fileURLIfPresentDoesNotCreateDirectory() {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("torrent-history-missing-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        TorrentHistoryFileStore.$directoryOverride.withValue(dir) {
+            #expect(TorrentHistoryFileStore.fileURLIfPresent(for: "missing") == nil)
+            #expect(!FileManager.default.fileExists(atPath: dir.path))
+        }
+    }
+
     @Test func storesTorrentFileForLookupAndDelete() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("torrent-history-files-\(UUID().uuidString)", isDirectory: true)
@@ -140,7 +151,7 @@ struct TorrentHistoryEntryTests {
             let url = try #require(TorrentHistoryFileStore.fileURLIfPresent(for: "abc123"))
             #expect(try Data(contentsOf: url) == data)
 
-            TorrentHistoryEntry.removeStoredTorrentFile(infoHash: "abc123")
+            TorrentHistoryFileStore.remove(infoHash: "abc123")
             #expect(TorrentHistoryFileStore.fileURLIfPresent(for: "abc123") == nil)
         }
     }

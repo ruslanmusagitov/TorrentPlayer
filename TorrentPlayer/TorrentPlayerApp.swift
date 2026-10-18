@@ -17,6 +17,7 @@ import AppKit
 struct TorrentPlayerApp: App {
     #if os(macOS)
     @NSApplicationDelegateAdaptor(TorrentPlayerAppDelegate.self) private var appDelegate
+    @Environment(\.openWindow) private var openWindow
     #endif
 
     @State private var engine = TorrentEngine()
@@ -24,7 +25,10 @@ struct TorrentPlayerApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
-        WindowGroup {
+        #if os(macOS)
+        let _ = appDelegate.bindOpenMainWindow { openWindow(id: "main") }
+        #endif
+        WindowGroup(id: "main") {
             rootView
                 #if os(macOS)
                 // Dock/Finder opens of .torrent files go to the existing window instead of
@@ -101,10 +105,11 @@ enum IncomingTorrentFiles {
     static let didReceive = Notification.Name("TorrentPlayer.openTorrentFiles")
     nonisolated static let contentType = UTType(importedAs: "org.bittorrent.torrent")
 
-    private static var queued: [URL] = []
+    /// At most one pending file. A newer drop replaces it.
+    private static var pending: URL?
     private static var isConsuming = false
 
-    static var hasPending: Bool { !queued.isEmpty }
+    static var hasPending: Bool { pending != nil }
 
     nonisolated static func isTorrentFileURL(_ url: URL) -> Bool {
         url.isFileURL && url.pathExtension.lowercased() == "torrent"
@@ -118,17 +123,23 @@ enum IncomingTorrentFiles {
 
     @discardableResult
     static func enqueueLatest(_ urls: [URL]) -> Bool {
-        guard let latest = urls.last(where: isTorrentFileURL) else { return false }
-        if let previous = queued.last, previous != latest {
+        guard let latest = urls.last(where: isTorrentFileURL) else {
+            urls.forEach(removeConsumedCopyIfNeeded)
+            return false
+        }
+        for url in urls where url != latest {
+            removeConsumedCopyIfNeeded(url)
+        }
+        if let previous = pending, previous != latest {
             removeConsumedCopyIfNeeded(previous)
         }
-        queued = [latest]
+        pending = latest
         return true
     }
 
     static func takeLatest() -> URL? {
-        let url = queued.last
-        queued.removeAll()
+        let url = pending
+        pending = nil
         return url
     }
 
@@ -217,6 +228,28 @@ final class TorrentPlayerAppDelegate: NSObject, NSApplicationDelegate {
     /// when an `NSApplicationDelegateAdaptor` is present.
     func application(_ application: NSApplication, open urls: [URL]) {
         IncomingTorrentFiles.handle(urls)
+        presentMainWindow()
+    }
+
+    /// Installed from `TorrentPlayerApp.body`. The delegate cannot see `openWindow`.
+    func bindOpenMainWindow(_ open: @escaping () -> Void) {
+        openMainWindow = open
+    }
+
+    private var openMainWindow: (() -> Void)?
+
+    /// File opens are delivered here even when every window is closed. SwiftUI does not
+    /// create a window for that case once this delegate method exists.
+    private func presentMainWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = NSApp.windows.first(where: { $0.isVisible || $0.isMiniaturized }) {
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+        openMainWindow?()
     }
 }
 

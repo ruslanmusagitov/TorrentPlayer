@@ -97,6 +97,9 @@ final class TorrentEngine {
     }
 
     private(set) var phase: Phase = .idle
+    /// Set when an add is rejected before playback is stopped. Does not replace `phase`,
+    /// so a loaded torrent stays `.loaded` and the current stream keeps running.
+    private(set) var addError: String?
     private(set) var bootStep: BootStep = .idle
     private(set) var bootProgress: Double = 0
     private(set) var lastMagnetURI: String?
@@ -301,10 +304,15 @@ final class TorrentEngine {
         #endif
     }
 
+    /// Records a rejection that did not stop playback. `phase` stays as it was.
+    private func rejectAdd(_ message: String) {
+        addError = message
+    }
+
     func addMagnet(_ uri: String) async throws {
         let trimmed = uri.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            phase = .error(TorrentEngineError.emptyMagnet.localizedDescription)
+            rejectAdd(TorrentEngineError.emptyMagnet.localizedDescription)
             throw TorrentEngineError.emptyMagnet
         }
 
@@ -325,11 +333,12 @@ final class TorrentEngine {
     @discardableResult
     func addTorrentFile(url: URL) async throws -> Data {
         #if os(macOS) || os(iOS)
+        // Above beginAdd so an add-in-progress rejection still deletes the staging copy.
+        defer { IncomingTorrentFiles.removeConsumedCopyIfNeeded(url) }
         try beginAdd()
         defer { isAddInFlight = false }
-        defer { IncomingTorrentFiles.removeConsumedCopyIfNeeded(url) }
         guard url.isFileURL else {
-            phase = .error(TorrentEngineError.invalidTorrentFile.localizedDescription)
+            rejectAdd(TorrentEngineError.invalidTorrentFile.localizedDescription)
             throw TorrentEngineError.invalidTorrentFile
         }
         // Read and bencode-parse off the main actor; a bad file fails here, before
@@ -342,7 +351,7 @@ final class TorrentEngine {
                 return (data, try TorrentInfo.parse(from: data))
             }.value
         } catch {
-            phase = .error(TorrentEngineError.invalidTorrentFile.localizedDescription)
+            rejectAdd(TorrentEngineError.invalidTorrentFile.localizedDescription)
             throw TorrentEngineError.invalidTorrentFile
         }
         try await addPrepared(logLabel: "addTorrentFile") { downloads in
@@ -384,9 +393,11 @@ final class TorrentEngine {
     private func beginAdd() throws {
         guard !isAddInFlight else {
             TPLog.engine("add ignored (another add in flight)")
+            rejectAdd(TorrentEngineError.addInProgress.localizedDescription)
             throw TorrentEngineError.addInProgress
         }
         isAddInFlight = true
+        addError = nil
     }
 
     private func addPrepared(
@@ -410,7 +421,7 @@ final class TorrentEngine {
             }
             infoHash = hash
         } catch {
-            phase = .error(error.localizedDescription)
+            rejectAdd(error.localizedDescription)
             throw error
         }
 
@@ -421,6 +432,7 @@ final class TorrentEngine {
         let previousInfoHash = activeInfoHash
         let previousSelectedFileID = selectedFileID
         let previousWasPersisting = resumePersistTask != nil
+        let persistenceWasEnabled = resumePersistenceEnabled
 
         phase = .adding
         var addedToSession = false
@@ -434,6 +446,9 @@ final class TorrentEngine {
             }
             activeHandle = previousHandle
             activeInfoHash = previousInfoHash
+            // Restore only after the previous handle and hash match again. While they
+            // differ, a refresh would write the new torrent's resume over the old file.
+            resumePersistenceEnabled = persistenceWasEnabled
             if previousHandle != nil, previousWasPersisting {
                 startResumePersistLoop()
             }
@@ -458,6 +473,10 @@ final class TorrentEngine {
             if previousInfoHash != nil {
                 await persistResumeIfNeeded(force: true)
             }
+            // Disable before the new handle is published. activeInfoHash stays the
+            // previous one until metadata succeeds, and refresh would otherwise
+            // save the new handle's resume into the previous info hash file.
+            resumePersistenceEnabled = false
             stopResumePersistLoop()
 
             let handle = try await session.addTorrent(params)
@@ -486,6 +505,7 @@ final class TorrentEngine {
             lastMagnetURI = magnetURI
             lastPersistedPiecesCompleted = -1
             lastResumePersistAt = nil
+            addError = nil
             phase = .loaded(torrent)
             await applySequentialPriorityForSelection()
             resumePersistenceEnabled = true

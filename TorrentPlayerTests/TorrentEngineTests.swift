@@ -448,14 +448,15 @@ struct TorrentEngineTests {
         let engine = TorrentEngine()
         await engine.bootstrap()
 
-        await #expect(throws: AddTorrentError.self) {
+        do {
             try await engine.addMagnet("not-a-magnet")
+            Issue.record("Expected invalid magnet to throw")
+        } catch {
+            #expect(error is AddTorrentError)
+            #expect(engine.addError == error.localizedDescription)
         }
-        if case .error = engine.phase {
-            #expect(engine.isOperational)
-        } else {
-            Issue.record("Expected error phase after invalid magnet, got \(engine.phase)")
-        }
+        #expect(engine.phase == .ready)
+        #expect(engine.isOperational)
         #else
         #expect(Bool(true))
         #endif
@@ -521,11 +522,12 @@ struct TorrentEngineTests {
             try await engine.addTorrentFile(url: fileURL)
         }
 
-        if case let .error(message) = engine.phase {
-            #expect(message == TorrentEngineError.invalidTorrentFile.localizedDescription)
-        } else {
-            Issue.record("Expected error phase after invalid torrent file, got \(engine.phase)")
+        guard case let .loaded(loaded) = engine.phase else {
+            Issue.record("Invalid file must keep the loaded phase, got \(engine.phase)")
+            return
         }
+        #expect(loaded == previous)
+        #expect(engine.addError == TorrentEngineError.invalidTorrentFile.localizedDescription)
         #expect(engine.activeTorrent == previous)
         #expect(engine.selectedFileID == previous.defaultSelectedFileID)
         #else
@@ -554,8 +556,10 @@ struct TorrentEngineTests {
         await #expect(throws: TorrentEngineError.addInProgress) {
             try await engine.addMagnet("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567")
         }
+        #expect(engine.addError == TorrentEngineError.addInProgress.localizedDescription)
 
         _ = try await first.value
+        #expect(engine.addError == nil)
         #expect(engine.canAddTorrent)
         guard case .loaded = engine.phase else {
             Issue.record("Rejected concurrent add must not disturb the first one, got \(engine.phase)")
@@ -602,11 +606,8 @@ struct TorrentEngineTests {
         await #expect(throws: TorrentEngineError.invalidTorrentFile) {
             try await engine.addTorrentFile(url: remote)
         }
-        if case let .error(message) = engine.phase {
-            #expect(message == TorrentEngineError.invalidTorrentFile.localizedDescription)
-        } else {
-            Issue.record("Expected error phase for remote torrent URL, got \(engine.phase)")
-        }
+        #expect(engine.phase == .idle)
+        #expect(engine.addError == TorrentEngineError.invalidTorrentFile.localizedDescription)
         #else
         #expect(Bool(true))
         #endif
@@ -692,6 +693,52 @@ struct IncomingTorrentFilesTests {
         #expect(!FileManager.default.fileExists(atPath: first.path))
         #expect(FileManager.default.fileExists(atPath: second.path))
         #expect(IncomingTorrentFiles.takeLatest() == second)
+    }
+
+    @Test func enqueueLatestDeletesUnacceptedCopiesInTheSameBatch() throws {
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("drop-batch-\(UUID().uuidString).torrent")
+        try Data("torrent".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let first = try IncomingTorrentFiles.persistDroppedFile(source)
+        let second = try IncomingTorrentFiles.persistDroppedFile(source)
+        let third = try IncomingTorrentFiles.persistDroppedFile(source)
+        defer {
+            IncomingTorrentFiles.discardLatest()
+            IncomingTorrentFiles.removeConsumedCopyIfNeeded(third)
+        }
+
+        IncomingTorrentFiles.enqueueLatest([first, second, third])
+
+        #expect(!FileManager.default.fileExists(atPath: first.path))
+        #expect(!FileManager.default.fileExists(atPath: second.path))
+        #expect(FileManager.default.fileExists(atPath: third.path))
+        #expect(IncomingTorrentFiles.takeLatest() == third)
+    }
+
+    @Test func addTorrentFileDeletesStagingCopyWhenAddAlreadyInFlight() async throws {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        await engine.bootstrap()
+
+        let fixture = try TorrentFileFixture.writeTempFile()
+        defer { try? FileManager.default.removeItem(at: fixture.deletingLastPathComponent()) }
+
+        let first = Task { try await engine.addTorrentFile(url: fixture) }
+        while !engine.isLoadingTorrent {
+            await Task.yield()
+        }
+
+        let staged = try IncomingTorrentFiles.persistDroppedFile(fixture)
+        await #expect(throws: TorrentEngineError.addInProgress) {
+            try await engine.addTorrentFile(url: staged)
+        }
+        #expect(!FileManager.default.fileExists(atPath: staged.path))
+        _ = try await first.value
+        #else
+        #expect(Bool(true))
+        #endif
     }
 
     @Test func addTorrentFileDeletesStagingCopyWhenLoadFails() async throws {

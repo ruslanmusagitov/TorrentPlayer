@@ -42,6 +42,8 @@ struct StreamingPlayerView: View {
     #if os(macOS) || os(iOS)
     @State private var player: AVPlayer?
     @State private var vlcPlayer: Player?
+    /// URL passed to the last `rebuildPlayer`. Used to ignore `.task(id:)` reruns on appear.
+    @State private var attachedPlaybackURL: URL?
     @State private var timeObserver: Any?
     @State private var endObserver: NSObjectProtocol?
     @State private var statusObservation: NSKeyValueObservation?
@@ -164,9 +166,15 @@ struct StreamingPlayerView: View {
         }
         // Attach even when playbackURL was set while this view was inactive
         // (drop/.torrent load switches to Files before onChange can fire).
+        // `.task(id:)` also runs on every appear, so skip a live player on the same URL.
         .task(id: engine.playbackURL) {
-            pausedByUser = false
-            rebuildPlayer(with: engine.playbackURL)
+            let url = engine.playbackURL
+            if hasActivePlayer, url == attachedPlaybackURL { return }
+            if url != attachedPlaybackURL {
+                pausedByUser = false
+            }
+            attachedPlaybackURL = url
+            rebuildPlayer(with: url)
         }
         .task(id: engine.playbackPhase) {
             while !Task.isCancelled {

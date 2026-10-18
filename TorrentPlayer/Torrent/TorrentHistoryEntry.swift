@@ -125,14 +125,6 @@ final class TorrentHistoryEntry {
             TPLog.error("history record failed: \(error.localizedDescription)")
         }
     }
-
-    static func removeStoredTorrentFile(infoHash: String) {
-        TorrentHistoryFileStore.remove(infoHash: infoHash)
-    }
-
-    static func removeAllStoredTorrentFiles() {
-        TorrentHistoryFileStore.removeAll()
-    }
 }
 
 enum TorrentHistoryFileStore {
@@ -157,10 +149,22 @@ enum TorrentHistoryFileStore {
         try directory().appendingPathComponent("\(infoHash).torrent", isDirectory: false)
     }
 
+    /// Read-only lookup. Does not create the history directory.
     static func fileURLIfPresent(for infoHash: String) -> URL? {
-        guard let url = try? fileURL(for: infoHash),
-              FileManager.default.fileExists(atPath: url.path)
-        else { return nil }
+        let base: URL?
+        if let directoryOverride {
+            base = directoryOverride
+        } else {
+            base = try? FileManager.default.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: false
+            ).appendingPathComponent("TorrentPlayer/HistoryTorrents", isDirectory: true)
+        }
+        guard let base else { return nil }
+        let url = base.appendingPathComponent("\(infoHash).torrent", isDirectory: false)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         return url
     }
 
