@@ -72,4 +72,23 @@ final class TorrentHistoryEntry {
             in: context
         )
     }
+
+    /// Loads a .torrent file into the engine and records history on success.
+    @MainActor
+    static func addTorrentFile(
+        url: URL,
+        using engine: TorrentEngine,
+        in context: ModelContext
+    ) async throws {
+        try await engine.addTorrentFile(url: url)
+        do {
+            try recordLoad(
+                magnetURI: engine.lastMagnetURI,
+                torrent: engine.activeTorrent,
+                in: context
+            )
+        } catch {
+            TPLog.error("history record failed: \(error.localizedDescription)")
+        }
+    }
 }

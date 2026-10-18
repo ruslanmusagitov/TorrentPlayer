@@ -529,6 +529,83 @@ struct TorrentEngineTests {
         #expect(Bool(true))
         #endif
     }
+
+    @Test @MainActor func addTorrentFileRejectsNonFileURLWithoutReadingNetwork() async {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        let remote = URL(string: "https://example.com/video.torrent")!
+        await #expect(throws: TorrentEngineError.invalidTorrentFile) {
+            try await engine.addTorrentFile(url: remote)
+        }
+        if case let .error(message) = engine.phase {
+            #expect(message == TorrentEngineError.invalidTorrentFile.localizedDescription)
+        } else {
+            Issue.record("Expected error phase for remote torrent URL, got \(engine.phase)")
+        }
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+}
+
+@Suite(.serialized)
+@MainActor
+struct IncomingTorrentFilesTests {
+    @Test func isTorrentFileURLRequiresLocalFile() {
+        #expect(IncomingTorrentFiles.isTorrentFileURL(URL(fileURLWithPath: "/tmp/clip.torrent")))
+        #expect(!IncomingTorrentFiles.isTorrentFileURL(URL(fileURLWithPath: "/tmp/clip.mp4")))
+        #expect(!IncomingTorrentFiles.isTorrentFileURL(URL(string: "https://example.com/clip.torrent")!))
+        #expect(!IncomingTorrentFiles.isTorrentFileURL(URL(string: "magnet:?xt=urn:btih:abc")!))
+    }
+
+    @Test func handleKeepsOnlyTheLatestTorrent() {
+        defer { _ = IncomingTorrentFiles.takeLatest() }
+
+        IncomingTorrentFiles.enqueueLatest([
+            URL(fileURLWithPath: "/tmp/first.torrent"),
+            URL(fileURLWithPath: "/tmp/readme.txt"),
+            URL(fileURLWithPath: "/tmp/second.torrent"),
+        ])
+        IncomingTorrentFiles.enqueueLatest([
+            URL(string: "https://example.com/remote.torrent")!,
+            URL(fileURLWithPath: "/tmp/third.torrent"),
+        ])
+
+        #expect(IncomingTorrentFiles.hasPending)
+        #expect(IncomingTorrentFiles.takeLatest() == URL(fileURLWithPath: "/tmp/third.torrent"))
+        #expect(!IncomingTorrentFiles.hasPending)
+        #expect(IncomingTorrentFiles.takeLatest() == nil)
+    }
+
+    @Test func persistDroppedFileCopiesReadableTorrent() throws {
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("drop-source-\(UUID().uuidString).torrent")
+        try Data("torrent".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let persisted = try IncomingTorrentFiles.persistDroppedFile(source)
+        defer { try? FileManager.default.removeItem(at: persisted) }
+
+        #expect(IncomingTorrentFiles.isTorrentFileURL(persisted))
+        #expect(persisted != source)
+        #expect(try Data(contentsOf: persisted) == Data("torrent".utf8))
+    }
+
+    @Test func addTorrentFileDeletesIncomingStagingCopy() async throws {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        await engine.bootstrap()
+
+        let fixture = try TorrentFileFixture.writeTempFile()
+        defer { try? FileManager.default.removeItem(at: fixture.deletingLastPathComponent()) }
+
+        let staged = try IncomingTorrentFiles.persistDroppedFile(fixture)
+        try await engine.addTorrentFile(url: staged)
+        #expect(!FileManager.default.fileExists(atPath: staged.path))
+        #else
+        #expect(Bool(true))
+        #endif
+    }
 }
 
 #if os(macOS) || os(iOS)

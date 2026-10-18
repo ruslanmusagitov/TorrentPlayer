@@ -67,6 +67,10 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: IncomingTorrentFiles.didReceive)) { _ in
             Task { await consumePendingTorrentFiles() }
         }
+        .onChange(of: engine.phase) { _, _ in
+            guard engine.isOperational, IncomingTorrentFiles.hasPending else { return }
+            Task { await consumePendingTorrentFiles() }
+        }
         .task {
             await consumePendingTorrentFiles()
         }
@@ -116,27 +120,27 @@ struct ContentView: View {
     }
 
     private func consumePendingTorrentFiles() async {
-        let urls = IncomingTorrentFiles.take()
-        for url in urls {
-            await openIncomingURL(url)
+        await IncomingTorrentFiles.consumeExclusively {
+            while IncomingTorrentFiles.hasPending {
+                guard await waitUntilEngineOperational() else {
+                    if case .unsupportedPlatform = engine.phase {
+                        _ = IncomingTorrentFiles.takeLatest()
+                        TPLog.error("dropped queued torrent file: torrent engine unavailable")
+                    } else {
+                        TPLog.error("engine not ready; keeping queued torrent file")
+                    }
+                    return
+                }
+                guard let url = IncomingTorrentFiles.takeLatest() else { return }
+                await openIncomingURL(url)
+            }
         }
     }
 
     private func openIncomingURL(_ url: URL) async {
         guard IncomingTorrentFiles.isTorrentFileURL(url) else { return }
-        guard await waitUntilEngineOperational() else { return }
-
         do {
-            try await engine.addTorrentFile(url: url)
-            do {
-                try TorrentHistoryEntry.recordLoad(
-                    magnetURI: engine.lastMagnetURI,
-                    torrent: engine.activeTorrent,
-                    in: modelContext
-                )
-            } catch {
-                TPLog.error("history record failed: \(error.localizedDescription)")
-            }
+            try await TorrentHistoryEntry.addTorrentFile(url: url, using: engine, in: modelContext)
             selection = .files
         } catch {
             // Engine already set .error for UI feedback (keeps previous torrent if any).

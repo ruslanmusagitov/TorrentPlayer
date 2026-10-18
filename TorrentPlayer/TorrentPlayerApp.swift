@@ -3,6 +3,7 @@
 //  TorrentPlayer
 //
 
+import CoreTransferable
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
@@ -51,22 +52,9 @@ struct TorrentPlayerApp: App {
             .onOpenURL { url in
                 IncomingTorrentFiles.handle([url])
             }
-            .dropDestination(for: URL.self) { urls, _ in
-                IncomingTorrentFiles.handle(urls)
-                return urls.contains { IncomingTorrentFiles.isTorrentFileURL($0) }
-            }
-            .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-                var accepted = false
-                for provider in providers where provider.canLoadObject(ofClass: URL.self) {
-                    accepted = true
-                    _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                        guard let url else { return }
-                        Task { @MainActor in
-                            IncomingTorrentFiles.handle([url])
-                        }
-                    }
-                }
-                return accepted
+            .dropDestination(for: TorrentFileDrop.self) { items, _ in
+                IncomingTorrentFiles.handle(items.map(\.url))
+                return !items.isEmpty
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .background || phase == .inactive else { return }
@@ -86,25 +74,71 @@ struct TorrentPlayerApp: App {
 @MainActor
 enum IncomingTorrentFiles {
     static let didReceive = Notification.Name("TorrentPlayer.openTorrentFiles")
-    private static var queued: [URL] = []
+    nonisolated static let contentType = UTType(importedAs: "org.bittorrent.torrent")
 
-    static func isTorrentFileURL(_ url: URL) -> Bool {
-        url.pathExtension.lowercased() == "torrent"
+    private static var queued: [URL] = []
+    private static var isConsuming = false
+
+    static var hasPending: Bool { !queued.isEmpty }
+
+    nonisolated static func isTorrentFileURL(_ url: URL) -> Bool {
+        url.isFileURL && url.pathExtension.lowercased() == "torrent"
     }
 
+    /// Keeps only the last .torrent file. Multiple drops/opens replace the previous pending URL.
     static func handle(_ urls: [URL]) {
-        let torrents = urls.filter(isTorrentFileURL).filter { url in
-            !queued.contains(url)
-        }
-        guard !torrents.isEmpty else { return }
-        queued.append(contentsOf: torrents)
+        guard enqueueLatest(urls) else { return }
         NotificationCenter.default.post(name: didReceive, object: nil)
     }
 
-    static func take() -> [URL] {
-        let urls = queued
+    @discardableResult
+    static func enqueueLatest(_ urls: [URL]) -> Bool {
+        guard let latest = urls.last(where: isTorrentFileURL) else { return false }
+        queued = [latest]
+        return true
+    }
+
+    static func takeLatest() -> URL? {
+        let url = queued.last
         queued.removeAll()
-        return urls
+        return url
+    }
+
+    static func consumeExclusively(_ body: () async -> Void) async {
+        guard !isConsuming else { return }
+        isConsuming = true
+        defer { isConsuming = false }
+        await body()
+    }
+
+    /// Copies a dropped file to a location the app can read after the drop callback returns.
+    nonisolated static func persistDroppedFile(_ url: URL) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TorrentPlayerIncoming", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dest = dir.appendingPathComponent("\(UUID().uuidString).torrent")
+        try FileManager.default.copyItem(at: url, to: dest)
+        return dest
+    }
+}
+
+/// FileRepresentation copies the dropped file into the sandbox (needed on iOS).
+private struct TorrentFileDrop: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(
+            importedContentType: IncomingTorrentFiles.contentType,
+            shouldAttemptToOpenInPlace: false
+        ) { received in
+            TorrentFileDrop(url: try IncomingTorrentFiles.persistDroppedFile(received.file))
+        }
+        FileRepresentation(
+            importedContentType: UTType(filenameExtension: "torrent") ?? IncomingTorrentFiles.contentType,
+            shouldAttemptToOpenInPlace: false
+        ) { received in
+            TorrentFileDrop(url: try IncomingTorrentFiles.persistDroppedFile(received.file))
+        }
     }
 }
 

@@ -301,13 +301,20 @@ final class TorrentEngine {
 
     func addTorrentFile(url: URL) async throws {
         #if os(macOS) || os(iOS)
+        guard url.isFileURL else {
+            phase = .error(TorrentEngineError.invalidTorrentFile.localizedDescription)
+            throw TorrentEngineError.invalidTorrentFile
+        }
+        let data: Data
+        do {
+            data = try await Task.detached(priority: .userInitiated) {
+                try Self.readTorrentFileData(from: url)
+            }.value
+        } catch {
+            phase = .error(TorrentEngineError.invalidTorrentFile.localizedDescription)
+            throw TorrentEngineError.invalidTorrentFile
+        }
         try await addPrepared(logLabel: "addTorrentFile") { downloads in
-            let data: Data
-            do {
-                data = try Self.readTorrentFileData(from: url)
-            } catch {
-                throw TorrentEngineError.invalidTorrentFile
-            }
             let info: TorrentInfo
             do {
                 info = try TorrentInfo.parse(from: data)
@@ -338,14 +345,39 @@ final class TorrentEngine {
         ).uri
     }
 
-    private static func readTorrentFileData(from url: URL) throws -> Data {
+    nonisolated private static func readTorrentFileData(from url: URL) throws -> Data {
         let accessed = url.startAccessingSecurityScopedResource()
         defer {
             if accessed {
                 url.stopAccessingSecurityScopedResource()
             }
+            Self.removeConsumedFileIfNeeded(url)
         }
         return try Data(contentsOf: url)
+    }
+
+    /// Deletes Inbox copies from "Open in…" and our drop staging copies after the bytes are in memory.
+    nonisolated private static func removeConsumedFileIfNeeded(_ url: URL) {
+        guard url.isFileURL else { return }
+        let fm = FileManager.default
+        let incoming = fm.temporaryDirectory.appendingPathComponent("TorrentPlayerIncoming", isDirectory: true)
+        if isStrictlyInside(url, directory: incoming) {
+            try? fm.removeItem(at: url)
+            return
+        }
+        #if os(iOS)
+        guard let documents = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let inbox = documents.appendingPathComponent("Inbox", isDirectory: true)
+        if isStrictlyInside(url, directory: inbox) {
+            try? fm.removeItem(at: url)
+        }
+        #endif
+    }
+
+    nonisolated private static func isStrictlyInside(_ url: URL, directory: URL) -> Bool {
+        let path = url.resolvingSymlinksInPath().path
+        let dirPath = directory.resolvingSymlinksInPath().path
+        return path.hasPrefix(dirPath.hasSuffix("/") ? dirPath : dirPath + "/")
     }
 
     private func addPrepared(
@@ -464,6 +496,10 @@ final class TorrentEngine {
     /// Waits for leading sequential bytes, then starts a loopback HTTP server for AVPlayer.
     func preparePlayback() async {
         #if os(macOS) || os(iOS)
+        guard playbackPhase != .buffering else {
+            TPLog.playback("preparePlayback ignored (already buffering)")
+            return
+        }
         stopPlayback()
         let generation = playbackGeneration
 

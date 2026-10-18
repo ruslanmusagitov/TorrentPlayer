@@ -26,6 +26,8 @@ struct StreamingPlayerView: View {
 
     @Environment(TorrentEngine.self) private var engine
     @State private var isPlaying = false
+    /// Distinguishes a user pause from the automatic pause when leaving the Player tab.
+    @State private var pausedByUser = false
     @State private var currentTime: TimeInterval = 0
     @State private var duration: TimeInterval = 0
     @State private var bufferedFraction: Double = 0
@@ -163,6 +165,7 @@ struct StreamingPlayerView: View {
         // Attach even when playbackURL was set while this view was inactive
         // (drop/.torrent load switches to Files before onChange can fire).
         .task(id: engine.playbackURL) {
+            pausedByUser = false
             rebuildPlayer(with: engine.playbackURL)
         }
         .task(id: engine.playbackPhase) {
@@ -180,10 +183,10 @@ struct StreamingPlayerView: View {
                 if let url = engine.playbackURL {
                     if !hasActivePlayer {
                         rebuildPlayer(with: url)
-                    } else {
+                    } else if !pausedByUser {
                         resumePlayback()
                     }
-                } else if engine.selectedFileID != nil {
+                } else if engine.selectedFileID != nil, engine.playbackPhase != .buffering {
                     Task { await engine.preparePlayback() }
                 }
             } else {
@@ -878,12 +881,16 @@ struct StreamingPlayerView: View {
             }
             vlcPlayer.togglePlayPause()
             isPlaying = vlcPlayer.isPlaybackRequestedActive
+            pausedByUser = !isPlaying
             return
         }
         guard let player else {
             if let url = engine.playbackURL {
+                pausedByUser = false
                 rebuildPlayer(with: url)
             } else if engine.selectedFileID != nil {
+                guard engine.playbackPhase != .buffering else { return }
+                pausedByUser = false
                 Task { await engine.preparePlayback() }
             }
             return
@@ -891,12 +898,15 @@ struct StreamingPlayerView: View {
         if player.timeControlStatus == .playing {
             player.pause()
             isPlaying = false
+            pausedByUser = true
         } else {
             player.play()
             isPlaying = true
+            pausedByUser = false
         }
         #else
         isPlaying.toggle()
+        pausedByUser = !isPlaying
         #endif
     }
 
@@ -968,7 +978,7 @@ struct StreamingPlayerView: View {
                 }
                 try next.play(url: url)
                 try? next.setAudioVolume(Volume(volume))
-                if isActive {
+                if isActive, !pausedByUser {
                     isPlaying = true
                 } else {
                     next.pause()
@@ -986,7 +996,7 @@ struct StreamingPlayerView: View {
         next.volume = volume
         player = next
         attachObservers(to: next)
-        if isActive {
+        if isActive, !pausedByUser {
             next.play()
             isPlaying = true
         } else {

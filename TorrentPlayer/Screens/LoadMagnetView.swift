@@ -7,7 +7,6 @@
 
 import SwiftData
 import SwiftUI
-import UniformTypeIdentifiers
 #if os(macOS)
 import AppKit
 #else
@@ -105,7 +104,7 @@ struct LoadMagnetView: View {
         .background(KTColor.background)
         .fileImporter(
             isPresented: $showTorrentImporter,
-            allowedContentTypes: Self.torrentContentTypes
+            allowedContentTypes: [IncomingTorrentFiles.contentType]
         ) { result in
             switch result {
             case .success(let url):
@@ -122,14 +121,6 @@ struct LoadMagnetView: View {
                 try? await Task.sleep(for: .seconds(1))
             }
         }
-    }
-
-    private static var torrentContentTypes: [UTType] {
-        var types = [UTType(importedAs: "org.bittorrent.torrent")]
-        if let byExtension = UTType(filenameExtension: "torrent"), !types.contains(byExtension) {
-            types.append(byExtension)
-        }
-        return types
     }
 
     private var statusChipColors: (background: Color, foreground: Color) {
@@ -263,8 +254,7 @@ struct LoadMagnetView: View {
         defer { isLoading = false }
 
         do {
-            try await engine.addTorrentFile(url: url)
-            recordHistory()
+            try await TorrentHistoryEntry.addTorrentFile(url: url, using: engine, in: modelContext)
             onLoad?()
         } catch {
             // Engine already set .error for UI feedback (keeps previous torrent if any).
