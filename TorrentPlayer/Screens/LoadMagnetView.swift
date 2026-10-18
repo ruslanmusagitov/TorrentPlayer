@@ -18,6 +18,7 @@ struct LoadMagnetView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var magnetText = ""
     @State private var isLoading = false
+    @State private var showTorrentImporter = false
     var onLoad: (() -> Void)?
 
     var body: some View {
@@ -75,6 +76,15 @@ struct LoadMagnetView: View {
                     }
                     .disabled(isLoading || engine.isLoadingTorrent || !engine.isOperational)
                     .opacity(isLoading || engine.isLoadingTorrent || !engine.isOperational ? 0.45 : 1)
+
+                    BrutalSecondaryButton(
+                        title: "Open Torrent File",
+                        systemImage: "doc.fill"
+                    ) {
+                        showTorrentImporter = true
+                    }
+                    .disabled(isLoading || engine.isLoadingTorrent || !engine.isOperational)
+                    .opacity(isLoading || engine.isLoadingTorrent || !engine.isOperational ? 0.45 : 1)
                 }
 
                 awaitingStreamCard
@@ -92,6 +102,19 @@ struct LoadMagnetView: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         .background(KTColor.background)
+        .fileImporter(
+            isPresented: $showTorrentImporter,
+            allowedContentTypes: [IncomingTorrentFiles.contentType]
+        ) { result in
+            switch result {
+            case .success(let url):
+                Task { @MainActor in
+                    await loadTorrentFile(url: url)
+                }
+            case .failure(let error):
+                TPLog.error("torrent file picker failed: \(error.localizedDescription)")
+            }
+        }
         .task {
             while !Task.isCancelled {
                 await engine.refreshDownloadStatus()
@@ -163,7 +186,7 @@ struct LoadMagnetView: View {
                         .font(KTTypography.technicalSM())
                         .textCase(.uppercase)
                         .tracking(2)
-                    Text("Paste a magnet, then tap Load Magnet")
+                    Text("Paste a magnet, open a torrent file, or drop one on the app")
                         .font(KTTypography.technicalSM())
                         .opacity(0.8)
                 }
@@ -217,16 +240,20 @@ struct LoadMagnetView: View {
         defer { isLoading = false }
 
         do {
-            try await engine.addMagnet(magnetText)
-            do {
-                try TorrentHistoryEntry.recordLoad(
-                    magnetURI: engine.lastMagnetURI,
-                    torrent: engine.activeTorrent,
-                    in: modelContext
-                )
-            } catch {
-                TPLog.error("history record failed: \(error.localizedDescription)")
-            }
+            try await TorrentHistoryEntry.addMagnet(magnetText, using: engine, in: modelContext)
+            onLoad?()
+        } catch {
+            // Engine already set .error for UI feedback (keeps previous torrent if any).
+        }
+    }
+
+    private func loadTorrentFile(url: URL) async {
+        guard !isLoading else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            try await TorrentHistoryEntry.addTorrentFile(url: url, using: engine, in: modelContext)
             onLoad?()
         } catch {
             // Engine already set .error for UI feedback (keeps previous torrent if any).

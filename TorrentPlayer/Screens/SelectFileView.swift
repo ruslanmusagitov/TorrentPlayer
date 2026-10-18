@@ -122,10 +122,10 @@ struct SelectFileView: View {
         VStack(spacing: KTSpacing.sm) {
             Image(systemName: "folder.badge.questionmark")
                 .font(.system(size: 40))
-            Text("LOAD A MAGNET FIRST")
+            Text("LOAD A TORRENT FIRST")
                 .font(KTTypography.labelCaps())
                 .tracking(1.1)
-            Text("Paste a magnet link on the Load screen to see file contents here.")
+            Text("Paste a magnet, open a torrent file, or drop a .torrent on the app window.")
                 .font(KTTypography.bodyMD())
                 .foregroundStyle(KTColor.onSurfaceVariant)
                 .multilineTextAlignment(.center)

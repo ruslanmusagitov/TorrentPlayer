@@ -15,6 +15,8 @@ struct ContentView: View {
     /// In-place player fullscreen — hides shell chrome so the same video surface can expand.
     @State private var playerFullscreen = false
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(TorrentEngine.self) private var engine
+    @Environment(\.modelContext) private var modelContext
 
     private var usesSideNav: Bool {
         #if os(macOS)
@@ -57,6 +59,21 @@ struct ContentView: View {
         #if os(macOS)
         .frame(minWidth: 900, minHeight: 640)
         #endif
+        .onReceive(NotificationCenter.default.publisher(for: IncomingTorrentFiles.didReceive)) { _ in
+            Task { await consumePendingTorrentFiles() }
+        }
+        // Retry queued files once the engine frees up, or drop them if it never will.
+        .onChange(of: engine.canAddTorrent) { _, ready in
+            guard ready, IncomingTorrentFiles.hasPending else { return }
+            Task { await consumePendingTorrentFiles() }
+        }
+        .onChange(of: engine.isSessionUnavailable) { _, unavailable in
+            guard unavailable, IncomingTorrentFiles.hasPending else { return }
+            Task { await consumePendingTorrentFiles() }
+        }
+        .task {
+            await consumePendingTorrentFiles()
+        }
     }
 
     @ViewBuilder
@@ -99,6 +116,34 @@ struct ContentView: View {
             TorrentHistoryView {
                 selection = .files
             }
+        }
+    }
+
+    private func consumePendingTorrentFiles() async {
+        await IncomingTorrentFiles.consumeExclusively {
+            while IncomingTorrentFiles.hasPending {
+                if engine.isSessionUnavailable {
+                    IncomingTorrentFiles.discardLatest()
+                    TPLog.error("dropped queued torrent file: torrent engine unavailable")
+                    return
+                }
+                // Not ready yet: the file stays queued and onChange(canAddTorrent) retries.
+                guard engine.canAddTorrent, let url = IncomingTorrentFiles.takeLatest() else { return }
+                await openIncomingURL(url)
+            }
+        }
+    }
+
+    private func openIncomingURL(_ url: URL) async {
+        guard IncomingTorrentFiles.isTorrentFileURL(url) else {
+            IncomingTorrentFiles.removeConsumedCopyIfNeeded(url)
+            return
+        }
+        do {
+            try await TorrentHistoryEntry.addTorrentFile(url: url, using: engine, in: modelContext)
+            selection = .files
+        } catch {
+            // Engine already set .error for UI feedback (keeps previous torrent if any).
         }
     }
 }

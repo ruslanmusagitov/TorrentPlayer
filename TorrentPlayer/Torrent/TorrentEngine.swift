@@ -165,8 +165,12 @@ final class TorrentEngine {
         self.streamingLeadTimeoutSeconds = streamingLeadTimeoutSeconds
     }
 
+    /// Set for the whole add call, including the file read before `phase` becomes `.adding`.
+    private var isAddInFlight = false
+
     var isLoadingTorrent: Bool {
-        switch phase {
+        if isAddInFlight { return true }
+        return switch phase {
         case .adding, .fetchingMetadata:
             true
         default:
@@ -181,6 +185,22 @@ final class TorrentEngine {
         default:
             false
         }
+    }
+
+    /// A new torrent can be added now: the session is up and no add is in flight.
+    var canAddTorrent: Bool {
+        #if os(macOS) || os(iOS)
+        return session != nil && !isLoadingTorrent
+        #else
+        return false
+        #endif
+    }
+
+    /// Bootstrap ended without a session; nothing can be added until relaunch.
+    var isSessionUnavailable: Bool {
+        if case .unsupportedPlatform = phase { return true }
+        if case .failed = bootStep { return true }
+        return false
     }
 
     var statusLabel: String {
@@ -289,30 +309,143 @@ final class TorrentEngine {
         }
 
         #if os(macOS) || os(iOS)
+        try beginAdd()
+        defer { isAddInFlight = false }
+        try await addPrepared(logLabel: "addMagnet") { downloads in
+            let params = try AddTorrentParams.fromMagnet(trimmed, savePath: downloads.path)
+            return (params, trimmed)
+        }
+        #else
+        phase = .error(TorrentEngineError.unsupportedPlatform.localizedDescription)
+        throw TorrentEngineError.unsupportedPlatform
+        #endif
+    }
+
+    /// Returns the raw .torrent bytes so callers can keep a copy (e.g. for history).
+    @discardableResult
+    func addTorrentFile(url: URL) async throws -> Data {
+        #if os(macOS) || os(iOS)
+        try beginAdd()
+        defer { isAddInFlight = false }
+        defer { IncomingTorrentFiles.removeConsumedCopyIfNeeded(url) }
+        guard url.isFileURL else {
+            phase = .error(TorrentEngineError.invalidTorrentFile.localizedDescription)
+            throw TorrentEngineError.invalidTorrentFile
+        }
+        // Read and bencode-parse off the main actor; a bad file fails here, before
+        // addPrepared touches playback or the active handle.
+        let data: Data
+        let info: TorrentInfo
+        do {
+            (data, info) = try await Task.detached(priority: .userInitiated) {
+                let data = try Self.readTorrentFileData(from: url)
+                return (data, try TorrentInfo.parse(from: data))
+            }.value
+        } catch {
+            phase = .error(TorrentEngineError.invalidTorrentFile.localizedDescription)
+            throw TorrentEngineError.invalidTorrentFile
+        }
+        try await addPrepared(logLabel: "addTorrentFile") { downloads in
+            let params = AddTorrentParams(torrentInfo: info, savePath: downloads.path)
+            return (params, Self.magnetURI(from: info))
+        }
+        return data
+        #else
+        phase = .error(TorrentEngineError.unsupportedPlatform.localizedDescription)
+        throw TorrentEngineError.unsupportedPlatform
+        #endif
+    }
+
+    #if os(macOS) || os(iOS)
+    nonisolated static func magnetURI(from info: TorrentInfo) -> String {
+        var trackers = info.announceList.flatMap { $0 }
+        if trackers.isEmpty, let announce = info.announceURL {
+            trackers = [announce]
+        }
+        var seen = Set<String>()
+        trackers = trackers.filter { seen.insert($0).inserted }
+        return MagnetLink(
+            infoHash: info.infoHash,
+            displayName: info.name,
+            trackers: trackers
+        ).uri
+    }
+
+    nonisolated private static func readTorrentFileData(from url: URL) throws -> Data {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessed {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        return try Data(contentsOf: url)
+    }
+
+    private func beginAdd() throws {
+        guard !isAddInFlight else {
+            TPLog.engine("add ignored (another add in flight)")
+            throw TorrentEngineError.addInProgress
+        }
+        isAddInFlight = true
+    }
+
+    private func addPrepared(
+        logLabel: String,
+        makeParams: (URL) throws -> (AddTorrentParams, String)
+    ) async throws {
         guard let session else {
             phase = .error(TorrentEngineError.sessionNotReady.localizedDescription)
             throw TorrentEngineError.sessionNotReady
         }
 
+        // Validate input before stopping playback so a bad magnet keeps the current stream.
+        var params: AddTorrentParams
+        let magnetURI: String
+        let infoHash: InfoHash
+        do {
+            let downloads = try Self.downloadsDirectory()
+            (params, magnetURI) = try makeParams(downloads)
+            guard let hash = params.infoHash else {
+                throw AddTorrentError.noInfoHash
+            }
+            infoHash = hash
+        } catch {
+            phase = .error(error.localizedDescription)
+            throw error
+        }
+
         stopPlayback()
 
         let previousTorrent = activeTorrent
+        let previousHandle = activeHandle
         let previousInfoHash = activeInfoHash
         let previousSelectedFileID = selectedFileID
+        let previousWasPersisting = resumePersistTask != nil
 
         phase = .adding
-        var pendingInfoHash: InfoHash?
+        var addedToSession = false
         await Task.yield()
-        TPLog.engine("addMagnet begin uriLen=\(trimmed.count)")
+        TPLog.engine("\(logLabel) begin")
+
+        // Puts the previous torrent back as the live one (its handle is still in the session).
+        func rollBack(message: String) async {
+            if addedToSession, infoHash != previousInfoHash {
+                await session.removeTorrent(infoHash)
+            }
+            activeHandle = previousHandle
+            activeInfoHash = previousInfoHash
+            if previousHandle != nil, previousWasPersisting {
+                startResumePersistLoop()
+            }
+            failOrRestore(
+                previousTorrent: previousTorrent,
+                previousSelectedFileID: previousSelectedFileID,
+                message: message
+            )
+        }
 
         do {
-            let downloads = try Self.downloadsDirectory()
-            var params = try AddTorrentParams.fromMagnet(trimmed, savePath: downloads.path)
-            guard let infoHash = params.infoHash else {
-                throw AddTorrentError.noInfoHash
-            }
-            pendingInfoHash = infoHash
-            TPLog.engine("addMagnet infoHash=\(infoHash)")
+            TPLog.engine("\(logLabel) infoHash=\(infoHash)")
 
             if let resume = Self.loadResumeData(infoHash: infoHash) {
                 params.resumeData = resume
@@ -328,6 +461,7 @@ final class TorrentEngine {
             stopResumePersistLoop()
 
             let handle = try await session.addTorrent(params)
+            addedToSession = true
             activeHandle = handle
 
             phase = .fetchingMetadata
@@ -337,15 +471,6 @@ final class TorrentEngine {
                 info = try await handle.waitForMetadata(timeout: metadataTimeoutSeconds)
                 TPLog.engine("metadata OK name=\(info.name) files=\(info.files.count) pieces=\(info.pieceCount)")
             } catch is TorrentError {
-                await session.removeTorrent(infoHash)
-                pendingInfoHash = nil
-                activeHandle = nil
-                activeInfoHash = previousInfoHash
-                failOrRestore(
-                    previousTorrent: previousTorrent,
-                    previousSelectedFileID: previousSelectedFileID,
-                    message: TorrentEngineError.metadataTimeout.localizedDescription
-                )
                 throw TorrentEngineError.metadataTimeout
             }
 
@@ -358,8 +483,7 @@ final class TorrentEngine {
             activeTorrent = torrent
             selectedFileID = torrent.defaultSelectedFileID
             activeInfoHash = infoHash
-            lastMagnetURI = trimmed
-            pendingInfoHash = nil
+            lastMagnetURI = magnetURI
             lastPersistedPiecesCompleted = -1
             lastResumePersistAt = nil
             phase = .loaded(torrent)
@@ -367,43 +491,20 @@ final class TorrentEngine {
             resumePersistenceEnabled = true
             await persistResumeIfNeeded(force: true)
             startResumePersistLoop()
-        } catch let error as TorrentEngineError {
-            if case .metadataTimeout = error {
-                throw error
-            }
-            if let pendingInfoHash {
-                await session.removeTorrent(pendingInfoHash)
-            }
-            activeHandle = nil
-            activeInfoHash = previousInfoHash
-            failOrRestore(
-                previousTorrent: previousTorrent,
-                previousSelectedFileID: previousSelectedFileID,
-                message: error.localizedDescription
-            )
-            throw error
         } catch {
-            if let pendingInfoHash {
-                await session.removeTorrent(pendingInfoHash)
-            }
-            activeHandle = nil
-            activeInfoHash = previousInfoHash
-            failOrRestore(
-                previousTorrent: previousTorrent,
-                previousSelectedFileID: previousSelectedFileID,
-                message: error.localizedDescription
-            )
+            await rollBack(message: error.localizedDescription)
             throw error
         }
-        #else
-        phase = .error(TorrentEngineError.unsupportedPlatform.localizedDescription)
-        throw TorrentEngineError.unsupportedPlatform
-        #endif
     }
+    #endif
 
     /// Waits for leading sequential bytes, then starts a loopback HTTP server for AVPlayer.
     func preparePlayback() async {
         #if os(macOS) || os(iOS)
+        guard playbackPhase != .buffering else {
+            TPLog.playback("preparePlayback ignored (already buffering)")
+            return
+        }
         stopPlayback()
         let generation = playbackGeneration
 
