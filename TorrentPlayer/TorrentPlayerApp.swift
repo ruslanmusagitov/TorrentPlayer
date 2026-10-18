@@ -3,10 +3,12 @@
 //  TorrentPlayer
 //
 
-import CoreTransferable
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
+#if os(iOS)
+import CoreTransferable
+#endif
 #if os(macOS)
 import AppKit
 #endif
@@ -52,10 +54,17 @@ struct TorrentPlayerApp: App {
             .onOpenURL { url in
                 IncomingTorrentFiles.handle([url])
             }
+            #if os(iOS)
             .dropDestination(for: TorrentFileDrop.self) { items, _ in
                 IncomingTorrentFiles.handle(items.map(\.url))
                 return !items.isEmpty
             }
+            #else
+            .dropDestination(for: URL.self) { urls, _ in
+                IncomingTorrentFiles.handle(urls)
+                return urls.contains(where: IncomingTorrentFiles.isTorrentFileURL)
+            }
+            #endif
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .background || phase == .inactive else { return }
                 Task { await engine.persistResumeIfNeeded(force: true) }
@@ -94,6 +103,9 @@ enum IncomingTorrentFiles {
     @discardableResult
     static func enqueueLatest(_ urls: [URL]) -> Bool {
         guard let latest = urls.last(where: isTorrentFileURL) else { return false }
+        if let previous = queued.last, previous != latest {
+            removeConsumedCopyIfNeeded(previous)
+        }
         queued = [latest]
         return true
     }
@@ -102,6 +114,11 @@ enum IncomingTorrentFiles {
         let url = queued.last
         queued.removeAll()
         return url
+    }
+
+    static func discardLatest() {
+        guard let url = takeLatest() else { return }
+        removeConsumedCopyIfNeeded(url)
     }
 
     static func consumeExclusively(_ body: () async -> Void) async {
@@ -113,16 +130,44 @@ enum IncomingTorrentFiles {
 
     /// Copies a dropped file to a location the app can read after the drop callback returns.
     nonisolated static func persistDroppedFile(_ url: URL) throws -> URL {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("TorrentPlayerIncoming", isDirectory: true)
+        let dir = incomingDirectory
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let dest = dir.appendingPathComponent("\(UUID().uuidString).torrent")
         try FileManager.default.copyItem(at: url, to: dest)
         return dest
     }
+
+    /// Deletes Inbox copies from "Open in…" and our drop staging copies. Leaves the user's original file alone.
+    nonisolated static func removeConsumedCopyIfNeeded(_ url: URL) {
+        guard url.isFileURL else { return }
+        let fm = FileManager.default
+        if isStrictlyInside(url, directory: incomingDirectory) {
+            try? fm.removeItem(at: url)
+            return
+        }
+        #if os(iOS)
+        guard let documents = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let inbox = documents.appendingPathComponent("Inbox", isDirectory: true)
+        if isStrictlyInside(url, directory: inbox) {
+            try? fm.removeItem(at: url)
+        }
+        #endif
+    }
+
+    nonisolated private static var incomingDirectory: URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("TorrentPlayerIncoming", isDirectory: true)
+    }
+
+    nonisolated private static func isStrictlyInside(_ url: URL, directory: URL) -> Bool {
+        let path = url.resolvingSymlinksInPath().path
+        let dirPath = directory.resolvingSymlinksInPath().path
+        return path.hasPrefix(dirPath.hasSuffix("/") ? dirPath : dirPath + "/")
+    }
 }
 
-/// FileRepresentation copies the dropped file into the sandbox (needed on iOS).
+#if os(iOS)
+/// FileRepresentation copies the dropped file into the sandbox.
 private struct TorrentFileDrop: Transferable {
     let url: URL
 
@@ -133,14 +178,9 @@ private struct TorrentFileDrop: Transferable {
         ) { received in
             TorrentFileDrop(url: try IncomingTorrentFiles.persistDroppedFile(received.file))
         }
-        FileRepresentation(
-            importedContentType: UTType(filenameExtension: "torrent") ?? IncomingTorrentFiles.contentType,
-            shouldAttemptToOpenInPlace: false
-        ) { received in
-            TorrentFileDrop(url: try IncomingTorrentFiles.persistDroppedFile(received.file))
-        }
     }
 }
+#endif
 
 #if os(macOS)
 /// Paint NSWindow before SwiftUI’s first layout to avoid a white flash into splash.

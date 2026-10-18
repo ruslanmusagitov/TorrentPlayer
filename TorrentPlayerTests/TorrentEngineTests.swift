@@ -606,6 +606,50 @@ struct IncomingTorrentFilesTests {
         #expect(Bool(true))
         #endif
     }
+
+    @Test func enqueueLatestDeletesReplacedStagingCopy() throws {
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("drop-replace-\(UUID().uuidString).torrent")
+        try Data("torrent".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let first = try IncomingTorrentFiles.persistDroppedFile(source)
+        let second = try IncomingTorrentFiles.persistDroppedFile(source)
+        defer {
+            IncomingTorrentFiles.discardLatest()
+            IncomingTorrentFiles.removeConsumedCopyIfNeeded(first)
+            IncomingTorrentFiles.removeConsumedCopyIfNeeded(second)
+        }
+
+        IncomingTorrentFiles.enqueueLatest([first])
+        IncomingTorrentFiles.enqueueLatest([second])
+
+        #expect(!FileManager.default.fileExists(atPath: first.path))
+        #expect(FileManager.default.fileExists(atPath: second.path))
+        #expect(IncomingTorrentFiles.takeLatest() == second)
+    }
+
+    @Test func addTorrentFileKeepsStagingCopyWhenLoadFails() async throws {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        await engine.bootstrap()
+
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("drop-invalid-\(UUID().uuidString).torrent")
+        try Data("not-a-torrent".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let staged = try IncomingTorrentFiles.persistDroppedFile(source)
+        defer { IncomingTorrentFiles.removeConsumedCopyIfNeeded(staged) }
+
+        await #expect(throws: TorrentEngineError.invalidTorrentFile) {
+            try await engine.addTorrentFile(url: staged)
+        }
+        #expect(FileManager.default.fileExists(atPath: staged.path))
+        #else
+        #expect(Bool(true))
+        #endif
+    }
 }
 
 #if os(macOS) || os(iOS)

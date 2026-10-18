@@ -124,7 +124,7 @@ struct ContentView: View {
             while IncomingTorrentFiles.hasPending {
                 guard await waitUntilEngineOperational() else {
                     if case .unsupportedPlatform = engine.phase {
-                        _ = IncomingTorrentFiles.takeLatest()
+                        IncomingTorrentFiles.discardLatest()
                         TPLog.error("dropped queued torrent file: torrent engine unavailable")
                     } else {
                         TPLog.error("engine not ready; keeping queued torrent file")
@@ -138,12 +138,16 @@ struct ContentView: View {
     }
 
     private func openIncomingURL(_ url: URL) async {
-        guard IncomingTorrentFiles.isTorrentFileURL(url) else { return }
+        guard IncomingTorrentFiles.isTorrentFileURL(url) else {
+            IncomingTorrentFiles.removeConsumedCopyIfNeeded(url)
+            return
+        }
         do {
             try await TorrentHistoryEntry.addTorrentFile(url: url, using: engine, in: modelContext)
             selection = .files
         } catch {
             // Engine already set .error for UI feedback (keeps previous torrent if any).
+            // Keep Inbox/staging copies so a broken file can be opened again.
         }
     }
 

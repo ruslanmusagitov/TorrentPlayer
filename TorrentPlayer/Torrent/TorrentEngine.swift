@@ -324,6 +324,7 @@ final class TorrentEngine {
             let params = AddTorrentParams(torrentInfo: info, savePath: downloads.path)
             return (params, Self.magnetURI(from: info))
         }
+        IncomingTorrentFiles.removeConsumedCopyIfNeeded(url)
         #else
         phase = .error(TorrentEngineError.unsupportedPlatform.localizedDescription)
         throw TorrentEngineError.unsupportedPlatform
@@ -351,33 +352,8 @@ final class TorrentEngine {
             if accessed {
                 url.stopAccessingSecurityScopedResource()
             }
-            Self.removeConsumedFileIfNeeded(url)
         }
         return try Data(contentsOf: url)
-    }
-
-    /// Deletes Inbox copies from "Open in…" and our drop staging copies after the bytes are in memory.
-    nonisolated private static func removeConsumedFileIfNeeded(_ url: URL) {
-        guard url.isFileURL else { return }
-        let fm = FileManager.default
-        let incoming = fm.temporaryDirectory.appendingPathComponent("TorrentPlayerIncoming", isDirectory: true)
-        if isStrictlyInside(url, directory: incoming) {
-            try? fm.removeItem(at: url)
-            return
-        }
-        #if os(iOS)
-        guard let documents = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-        let inbox = documents.appendingPathComponent("Inbox", isDirectory: true)
-        if isStrictlyInside(url, directory: inbox) {
-            try? fm.removeItem(at: url)
-        }
-        #endif
-    }
-
-    nonisolated private static func isStrictlyInside(_ url: URL, directory: URL) -> Bool {
-        let path = url.resolvingSymlinksInPath().path
-        let dirPath = directory.resolvingSymlinksInPath().path
-        return path.hasPrefix(dirPath.hasSuffix("/") ? dirPath : dirPath + "/")
     }
 
     private func addPrepared(
