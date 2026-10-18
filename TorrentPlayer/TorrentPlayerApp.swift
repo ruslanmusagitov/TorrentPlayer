@@ -24,59 +24,72 @@ struct TorrentPlayerApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
-        WindowGroup {
-            ZStack {
-                // Matches LaunchScreen / splash so the first SwiftUI frame is never system white.
-                KTColor.background.ignoresSafeArea()
-
-                ContentView()
-                    .environment(engine)
-                    .opacity(showSplash ? 0 : 1)
-                    .allowsHitTesting(!showSplash)
-
-                if showSplash {
-                    SplashScreenView(
-                        bootStep: engine.bootStep,
-                        bootProgress: engine.bootProgress
-                    ) {
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            showSplash = false
-                        }
-                    }
-                    .transition(.opacity)
-                    .zIndex(1)
-                }
-            }
-            .task {
-                TPLog.bootstrapFileLogging()
-                await engine.bootstrap()
-            }
-            .onOpenURL { url in
-                IncomingTorrentFiles.handle([url])
-            }
-            #if os(iOS)
-            .dropDestination(for: TorrentFileDrop.self) { items, _ in
-                IncomingTorrentFiles.handle(items.map(\.url))
-                return !items.isEmpty
-            }
-            #else
-            .dropDestination(for: URL.self) { urls, _ in
-                IncomingTorrentFiles.handle(urls)
-                return urls.contains(where: IncomingTorrentFiles.isTorrentFileURL)
-            }
-            #endif
-            .onChange(of: scenePhase) { _, phase in
-                guard phase == .background || phase == .inactive else { return }
-                Task { await engine.persistResumeIfNeeded(force: true) }
-            }
-            #if os(macOS)
-            .background(WindowBackgroundFixer())
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
-                Task { await engine.persistResumeIfNeeded(force: true) }
-            }
-            #endif
+        #if os(macOS)
+        // Single window: Dock/Finder opens of .torrent files reuse it instead of
+        // spawning another window (and another player on the shared engine).
+        Window("TorrentPlayer", id: "main") {
+            rootView
         }
         .modelContainer(for: TorrentHistoryEntry.self)
+        #else
+        WindowGroup {
+            rootView
+        }
+        .modelContainer(for: TorrentHistoryEntry.self)
+        #endif
+    }
+
+    private var rootView: some View {
+        ZStack {
+            // Matches LaunchScreen / splash so the first SwiftUI frame is never system white.
+            KTColor.background.ignoresSafeArea()
+
+            ContentView()
+                .environment(engine)
+                .opacity(showSplash ? 0 : 1)
+                .allowsHitTesting(!showSplash)
+
+            if showSplash {
+                SplashScreenView(
+                    bootStep: engine.bootStep,
+                    bootProgress: engine.bootProgress
+                ) {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        showSplash = false
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(1)
+            }
+        }
+        .task {
+            TPLog.bootstrapFileLogging()
+            await engine.bootstrap()
+        }
+        .onOpenURL { url in
+            IncomingTorrentFiles.handle([url])
+        }
+        #if os(iOS)
+        .dropDestination(for: TorrentFileDrop.self) { items, _ in
+            IncomingTorrentFiles.handle(items.map(\.url))
+            return !items.isEmpty
+        }
+        #else
+        .dropDestination(for: URL.self) { urls, _ in
+            IncomingTorrentFiles.handle(urls)
+            return urls.contains(where: IncomingTorrentFiles.isTorrentFileURL)
+        }
+        #endif
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .background || phase == .inactive else { return }
+            Task { await engine.persistResumeIfNeeded(force: true) }
+        }
+        #if os(macOS)
+        .background(WindowBackgroundFixer())
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            Task { await engine.persistResumeIfNeeded(force: true) }
+        }
+        #endif
     }
 }
 
