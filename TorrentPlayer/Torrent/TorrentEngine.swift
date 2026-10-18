@@ -100,6 +100,7 @@ final class TorrentEngine {
     private(set) var bootStep: BootStep = .idle
     private(set) var bootProgress: Double = 0
     private(set) var lastMagnetURI: String?
+    private(set) var lastTorrentFileData: Data?
     private(set) var activeTorrent: ActiveTorrent?
     private(set) var selectedFileID: Int?
     private(set) var playbackPhase: PlaybackPhase = .idle
@@ -293,6 +294,7 @@ final class TorrentEngine {
             let params = try AddTorrentParams.fromMagnet(trimmed, savePath: downloads.path)
             return (params, trimmed)
         }
+        lastTorrentFileData = nil
         #else
         phase = .error(TorrentEngineError.unsupportedPlatform.localizedDescription)
         throw TorrentEngineError.unsupportedPlatform
@@ -325,6 +327,7 @@ final class TorrentEngine {
             let params = AddTorrentParams(torrentInfo: info, savePath: downloads.path)
             return (params, Self.magnetURI(from: info))
         }
+        lastTorrentFileData = data
         #else
         phase = .error(TorrentEngineError.unsupportedPlatform.localizedDescription)
         throw TorrentEngineError.unsupportedPlatform
@@ -828,6 +831,7 @@ final class TorrentEngine {
         activeTorrent = nil
         selectedFileID = nil
         lastMagnetURI = nil
+        lastTorrentFileData = nil
         downloadProgress = 0
         downloadRateBytes = 0
         peersConnected = 0

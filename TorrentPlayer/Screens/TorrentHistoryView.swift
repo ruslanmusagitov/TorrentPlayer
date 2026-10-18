@@ -176,7 +176,7 @@ struct TorrentHistoryView: View {
         defer { resumingInfoHash = nil }
 
         do {
-            try await engine.addMagnet(entry.magnetURI)
+            try await TorrentHistoryEntry.resume(entry, using: engine, in: modelContext)
             onResume?()
         } catch {
             resumeError = error.localizedDescription
@@ -184,9 +184,11 @@ struct TorrentHistoryView: View {
     }
 
     private func delete(_ entry: TorrentHistoryEntry) {
+        let hash = entry.infoHash
         modelContext.delete(entry)
         do {
             try modelContext.save()
+            TorrentHistoryEntry.removeStoredTorrentFile(infoHash: hash)
         } catch {
             TPLog.error("history delete failed: \(error.localizedDescription)")
         }
@@ -198,6 +200,7 @@ struct TorrentHistoryView: View {
         }
         do {
             try modelContext.save()
+            TorrentHistoryEntry.removeAllStoredTorrentFiles()
         } catch {
             TPLog.error("history clear failed: \(error.localizedDescription)")
         }

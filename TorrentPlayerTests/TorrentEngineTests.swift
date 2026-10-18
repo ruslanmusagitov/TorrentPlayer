@@ -493,6 +493,8 @@ struct TorrentEngineTests {
         #expect(torrent.files[0].path == TorrentFileFixture.fileName)
         #expect(engine.lastMagnetURI?.contains("xt=urn:btih:") == true)
         #expect(engine.lastMagnetURI?.contains("tr=") == true)
+        let torrentData = try Data(contentsOf: fileURL)
+        #expect(engine.lastTorrentFileData == torrentData)
         #else
         #expect(Bool(true))
         #endif
@@ -651,7 +653,7 @@ struct IncomingTorrentFilesTests {
 }
 
 #if os(macOS) || os(iOS)
-private enum TorrentFileFixture {
+enum TorrentFileFixture {
     static let announceURL = "skip://tracker.invalid/announce"
     static let fileName = "testfile.txt"
 

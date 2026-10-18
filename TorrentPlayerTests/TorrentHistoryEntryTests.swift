@@ -129,6 +129,59 @@ struct TorrentHistoryEntryTests {
         #expect(entries[0].magnetURI.contains("tr="))
     }
 
+    @Test func storesTorrentFileForLookupAndDelete() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("torrent-history-files-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try TorrentHistoryFileStore.$directoryOverride.withValue(dir) {
+            let data = Data("torrent-bytes".utf8)
+            try TorrentHistoryFileStore.store(data: data, infoHash: "abc123")
+            let url = try #require(TorrentHistoryFileStore.fileURLIfPresent(for: "abc123"))
+            #expect(try Data(contentsOf: url) == data)
+
+            TorrentHistoryEntry.removeStoredTorrentFile(infoHash: "abc123")
+            #expect(TorrentHistoryFileStore.fileURLIfPresent(for: "abc123") == nil)
+        }
+    }
+
+    @Test func addTorrentFileKeepsCopyUsedByHistoryResume() async throws {
+        #if os(macOS) || os(iOS)
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("torrent-history-files-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try await TorrentHistoryFileStore.$directoryOverride.withValue(dir) {
+            let engine = TorrentEngine()
+            await engine.bootstrap()
+            let context = try makeContext()
+            let fileURL = try TorrentFileFixture.writeTempFile()
+            defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+
+            try await TorrentHistoryEntry.addTorrentFile(url: fileURL, using: engine, in: context)
+
+            let entries = try context.fetch(FetchDescriptor<TorrentHistoryEntry>())
+            #expect(entries.count == 1)
+            let stored = try #require(TorrentHistoryFileStore.fileURLIfPresent(for: entries[0].infoHash))
+            #expect(try Data(contentsOf: stored) == engine.lastTorrentFileData)
+
+            try FileManager.default.removeItem(at: fileURL)
+
+            let engine2 = TorrentEngine()
+            await engine2.bootstrap()
+            try await TorrentHistoryEntry.resume(entries[0], using: engine2, in: context)
+            guard case let .loaded(torrent) = engine2.phase else {
+                Issue.record("Expected loaded phase after history resume, got \(engine2.phase)")
+                return
+            }
+            #expect(torrent.displayName == TorrentFileFixture.fileName)
+            #expect(torrent.infoHash == entries[0].infoHash)
+        }
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+
     @Test func displayHelpersMatchDesignConventions() {
         let video = TorrentHistoryEntry(
             infoHash: "abcdef1234567890abcdef1234567890abcdef12",
