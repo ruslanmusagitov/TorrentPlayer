@@ -130,6 +130,7 @@ final class TorrentEngine {
     }
 
     /// AVPlayer only handles a few containers; MKV/AVI/etc. need embedded SwiftVLC.
+    /// Compatible MP4/MOV still need a trailing-byte prefetch — `moov` is often at EOF.
     static func isAVPlayerCompatible(path: String) -> Bool {
         switch (path as NSString).pathExtension.lowercased() {
         case "mp4", "m4v", "mov":
@@ -559,14 +560,15 @@ final class TorrentEngine {
                 return
             }
 
-            // MKV/AVI (SwiftVLC) probe cues near EOF immediately. Fetch a trailing
-            // window before advertising the stream, then resume sequential download.
+            // AVPlayer needs the MP4 `moov` atom (usually at EOF unless faststart).
+            // SwiftVLC needs MKV/AVI cues at EOF. Fetch a trailing window before
+            // advertising the stream, then resume sequential download.
             var tailOffset: Int64 = 0
             var tailBytes: Int64 = 0
-            if usesEmbeddedVLC, file.size > leadBytes {
+            if file.size > leadBytes {
                 tailBytes = min(streamingLeadBytes, file.size - leadBytes)
                 tailOffset = file.size - tailBytes
-                TPLog.playback("preparePlayback fetching VLC tail offset=\(tailOffset) bytes=\(tailBytes)")
+                TPLog.playback("preparePlayback fetching tail offset=\(tailOffset) bytes=\(tailBytes)")
                 await handle.prioritizeFileBytes(
                     fileIndex: fileIndex,
                     fileOffset: tailOffset,

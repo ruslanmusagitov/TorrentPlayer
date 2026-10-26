@@ -242,6 +242,45 @@ struct TorrentEngineTests {
         #expect(gate.readyThroughOffset == 2_000_000)
     }
 
+    @Test func localHTTPStreamServerServesTailWhileMiddleNotReady() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TorrentPlayerHTTPTail-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let fileSize = 8 * 1024
+        let lead = 2 * 1024
+        let tail = 2 * 1024
+        var payload = Data(count: fileSize)
+        for i in 0..<fileSize { payload[i] = UInt8(i % 251) }
+        let fileURL = dir.appendingPathComponent("clip.mp4")
+        try payload.write(to: fileURL)
+
+        let gate = StreamingByteGate()
+        gate.markReady(through: Int64(lead))
+        gate.markReady(range: Int64(fileSize - tail)..<Int64(fileSize))
+
+        let server = LocalHTTPStreamServer(
+            fileURL: fileURL,
+            fileSize: Int64(fileSize),
+            contentType: "video/mp4",
+            rangeWaitSeconds: 2,
+            chunkSize: 512,
+            waitForBytes: { offset, length in
+                gate.isReady(offset: offset, length: length)
+            }
+        )
+        try await server.start()
+        defer { server.stop() }
+        let streamURL = try #require(server.streamURL)
+
+        var tailRequest = URLRequest(url: streamURL)
+        tailRequest.setValue("bytes=\(fileSize - tail)-\(fileSize - 1)", forHTTPHeaderField: "Range")
+        let tailResponse = try await URLSession.shared.data(for: tailRequest)
+        #expect((tailResponse.1 as? HTTPURLResponse)?.statusCode == 206)
+        #expect(tailResponse.0 == Data(payload[(fileSize - tail)...]))
+    }
+
     @Test func localHTTPStreamServerStreamsBeforeFullFileReady() async throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("TorrentPlayerHTTPGrow-\(UUID().uuidString)", isDirectory: true)

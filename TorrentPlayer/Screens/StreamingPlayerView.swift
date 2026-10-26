@@ -44,6 +44,9 @@ struct StreamingPlayerView: View {
     @State private var vlcPlayer: Player?
     /// URL passed to the last `rebuildPlayer`. Used to ignore `.task(id:)` reruns on appear.
     @State private var attachedPlaybackURL: URL?
+    /// AVPlayer can hang at unknown duration if the first `moov` range request stalled.
+    /// Retry once after the selected file is fully on disk.
+    @State private var didRetryCompleteDownload = false
     @State private var timeObserver: Any?
     @State private var endObserver: NSObjectProtocol?
     @State private var statusObservation: NSKeyValueObservation?
@@ -172,6 +175,7 @@ struct StreamingPlayerView: View {
             if hasActivePlayer, url == attachedPlaybackURL { return }
             if url != attachedPlaybackURL {
                 pausedByUser = false
+                didRetryCompleteDownload = false
             }
             attachedPlaybackURL = url
             rebuildPlayer(with: url)
@@ -179,6 +183,7 @@ struct StreamingPlayerView: View {
         .task(id: engine.playbackPhase) {
             while !Task.isCancelled {
                 await engine.refreshDownloadStatus()
+                retryAVPlayerAfterCompleteDownloadIfNeeded()
                 try? await Task.sleep(for: .seconds(1))
                 if engine.playbackPhase == .idle { break }
             }
@@ -1056,11 +1061,31 @@ struct StreamingPlayerView: View {
 
         statusObservation?.invalidate()
         statusObservation = player.currentItem?.observe(\.status, options: [.initial, .new]) { [weak player] item, _ in
-            guard item.status == .readyToPlay, let player else { return }
             Task { @MainActor in
-                await loadAVAudioTracks(for: player)
+                guard let player, self.player === player else { return }
+                switch item.status {
+                case .readyToPlay:
+                    await loadAVAudioTracks(for: player)
+                case .failed:
+                    let message = item.error?.localizedDescription ?? "unknown"
+                    TPLog.error("AVPlayer item failed: \(message)")
+                default:
+                    break
+                }
             }
         }
+    }
+
+    /// After a stalled EOF/`moov` probe, AVPlayer stays at unknown duration even
+    /// when the file later reaches 100%. Rebuild once so it can range-read the tail.
+    private func retryAVPlayerAfterCompleteDownloadIfNeeded() {
+        guard !engine.usesEmbeddedVLC, player != nil else { return }
+        guard duration <= 0, !didRetryCompleteDownload else { return }
+        guard engine.playbackPhase == .ready, engine.downloadProgress >= 1 else { return }
+        guard let url = engine.playbackURL else { return }
+        didRetryCompleteDownload = true
+        TPLog.playback("retry AVPlayer after complete download url=\(url.absoluteString)")
+        rebuildPlayer(with: url)
     }
 
     private func tearDownPlayer() {
