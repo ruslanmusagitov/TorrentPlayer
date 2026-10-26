@@ -18,6 +18,7 @@ struct LoadMagnetView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var magnetText = ""
     @State private var isLoading = false
+    @State private var showTorrentImporter = false
     var onLoad: (() -> Void)?
 
     var body: some View {
@@ -75,6 +76,15 @@ struct LoadMagnetView: View {
                     }
                     .disabled(isLoading || engine.isLoadingTorrent || !engine.isOperational)
                     .opacity(isLoading || engine.isLoadingTorrent || !engine.isOperational ? 0.45 : 1)
+
+                    BrutalSecondaryButton(
+                        title: "Open Torrent File",
+                        systemImage: "doc.fill"
+                    ) {
+                        showTorrentImporter = true
+                    }
+                    .disabled(isLoading || engine.isLoadingTorrent || !engine.isOperational)
+                    .opacity(isLoading || engine.isLoadingTorrent || !engine.isOperational ? 0.45 : 1)
                 }
 
                 awaitingStreamCard
@@ -92,6 +102,19 @@ struct LoadMagnetView: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         .background(KTColor.background)
+        .fileImporter(
+            isPresented: $showTorrentImporter,
+            allowedContentTypes: [IncomingTorrentFiles.contentType]
+        ) { result in
+            switch result {
+            case .success(let url):
+                Task { @MainActor in
+                    await loadTorrentFile(url: url)
+                }
+            case .failure(let error):
+                TPLog.error("torrent file picker failed: \(error.localizedDescription)")
+            }
+        }
         .task {
             while !Task.isCancelled {
                 await engine.refreshDownloadStatus()
@@ -100,18 +123,39 @@ struct LoadMagnetView: View {
         }
     }
 
+    /// Validation failures stay off `phase` so a live torrent remains `.loaded`.
+    private var showsAddError: Bool {
+        guard engine.addError != nil else { return false }
+        switch engine.phase {
+        case .adding, .fetchingMetadata:
+            return false
+        default:
+            return true
+        }
+    }
+
+    /// Message for the load card: a pre-playback rejection, or `phase == .error` after a failed add.
+    private var visibleAddFailure: String? {
+        if showsAddError { return engine.addError }
+        if case let .error(message) = engine.phase { return message }
+        return nil
+    }
+
     private var statusChipColors: (background: Color, foreground: Color) {
+        if showsAddError {
+            return (KTColor.errorContainer, KTColor.error)
+        }
         switch engine.phase {
         case .error:
-            (KTColor.errorContainer, KTColor.error)
+            return (KTColor.errorContainer, KTColor.error)
         case .unsupportedPlatform:
-            (KTColor.secondaryFixed, KTColor.secondary)
+            return (KTColor.secondaryFixed, KTColor.secondary)
         case .ready, .loaded:
-            (KTColor.tertiaryContainer, KTColor.onTertiaryContainer)
+            return (KTColor.tertiaryContainer, KTColor.onTertiaryContainer)
         case .fetchingMetadata, .adding:
-            (KTColor.primaryContainer, KTColor.onPrimary)
+            return (KTColor.primaryContainer, KTColor.onPrimary)
         default:
-            (KTColor.surfaceContainer, KTColor.onSurfaceVariant)
+            return (KTColor.surfaceContainer, KTColor.onSurfaceVariant)
         }
     }
 
@@ -121,34 +165,7 @@ struct LoadMagnetView: View {
             VStack(spacing: KTSpacing.xs) {
                 Image(systemName: "sensor.tag.radiowaves.forward")
                     .font(.system(size: 48, weight: .regular))
-                switch engine.phase {
-                case .fetchingMetadata, .adding:
-                    ProgressView()
-                        .controlSize(.regular)
-                        .tint(.white)
-                    Text("Fetching Metadata…")
-                        .font(KTTypography.technicalSM())
-                        .textCase(.uppercase)
-                        .tracking(2)
-                    Text("Contacting trackers / DHT for file list")
-                        .font(KTTypography.technicalSM())
-                        .opacity(0.8)
-                        .multilineTextAlignment(.center)
-                case let .loaded(torrent):
-                    Text(torrent.displayName.uppercased())
-                        .font(KTTypography.technicalSM())
-                        .multilineTextAlignment(.center)
-                        .lineLimit(3)
-                        .minimumScaleFactor(0.75)
-                    Text("\(torrent.files.count) files • \(torrent.formattedTotalSize.uppercased())")
-                        .font(KTTypography.technicalSM())
-                        .opacity(0.8)
-                    Text(torrent.infoHash)
-                        .font(KTTypography.technicalSM())
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .opacity(0.8)
-                case let .error(message):
+                if let message = visibleAddFailure {
                     Text("LOAD FAILED")
                         .font(KTTypography.technicalSM())
                         .textCase(.uppercase)
@@ -158,14 +175,43 @@ struct LoadMagnetView: View {
                         .multilineTextAlignment(.center)
                         .lineLimit(4)
                         .opacity(0.9)
-                default:
-                    Text("Awaiting Active Stream")
-                        .font(KTTypography.technicalSM())
-                        .textCase(.uppercase)
-                        .tracking(2)
-                    Text("Paste a magnet, then tap Load Magnet")
-                        .font(KTTypography.technicalSM())
-                        .opacity(0.8)
+                } else {
+                    switch engine.phase {
+                    case .fetchingMetadata, .adding:
+                        ProgressView()
+                            .controlSize(.regular)
+                            .tint(.white)
+                        Text("Fetching Metadata…")
+                            .font(KTTypography.technicalSM())
+                            .textCase(.uppercase)
+                            .tracking(2)
+                        Text("Contacting trackers / DHT for file list")
+                            .font(KTTypography.technicalSM())
+                            .opacity(0.8)
+                            .multilineTextAlignment(.center)
+                    case let .loaded(torrent):
+                        Text(torrent.displayName.uppercased())
+                            .font(KTTypography.technicalSM())
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                            .minimumScaleFactor(0.75)
+                        Text("\(torrent.files.count) files • \(torrent.formattedTotalSize.uppercased())")
+                            .font(KTTypography.technicalSM())
+                            .opacity(0.8)
+                        Text(torrent.infoHash)
+                            .font(KTTypography.technicalSM())
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .opacity(0.8)
+                    default:
+                        Text("Awaiting Active Stream")
+                            .font(KTTypography.technicalSM())
+                            .textCase(.uppercase)
+                            .tracking(2)
+                        Text("Paste a magnet, open a torrent file, or drop one on the app")
+                            .font(KTTypography.technicalSM())
+                            .opacity(0.8)
+                    }
                 }
             }
             .foregroundStyle(.white)
@@ -217,16 +263,20 @@ struct LoadMagnetView: View {
         defer { isLoading = false }
 
         do {
-            try await engine.addMagnet(magnetText)
-            do {
-                try TorrentHistoryEntry.recordLoad(
-                    magnetURI: engine.lastMagnetURI,
-                    torrent: engine.activeTorrent,
-                    in: modelContext
-                )
-            } catch {
-                TPLog.error("history record failed: \(error.localizedDescription)")
-            }
+            try await TorrentHistoryEntry.addMagnet(magnetText, using: engine, in: modelContext)
+            onLoad?()
+        } catch {
+            // Engine already set .error for UI feedback (keeps previous torrent if any).
+        }
+    }
+
+    private func loadTorrentFile(url: URL) async {
+        guard !isLoading else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            try await TorrentHistoryEntry.addTorrentFile(url: url, using: engine, in: modelContext)
             onLoad?()
         } catch {
             // Engine already set .error for UI feedback (keeps previous torrent if any).

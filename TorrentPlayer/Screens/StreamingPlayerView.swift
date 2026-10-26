@@ -26,6 +26,8 @@ struct StreamingPlayerView: View {
 
     @Environment(TorrentEngine.self) private var engine
     @State private var isPlaying = false
+    /// Distinguishes a user pause from the automatic pause when leaving the Player tab.
+    @State private var pausedByUser = false
     @State private var currentTime: TimeInterval = 0
     @State private var duration: TimeInterval = 0
     @State private var bufferedFraction: Double = 0
@@ -40,6 +42,8 @@ struct StreamingPlayerView: View {
     #if os(macOS) || os(iOS)
     @State private var player: AVPlayer?
     @State private var vlcPlayer: Player?
+    /// URL passed to the last `rebuildPlayer`. Used to ignore `.task(id:)` reruns on appear.
+    @State private var attachedPlaybackURL: URL?
     @State private var timeObserver: Any?
     @State private var endObserver: NSObjectProtocol?
     @State private var statusObservation: NSKeyValueObservation?
@@ -160,6 +164,18 @@ struct StreamingPlayerView: View {
             if engine.playbackURL != nil { return }
             await engine.preparePlayback()
         }
+        // Attach even when playbackURL was set while this view was inactive
+        // (drop/.torrent load switches to Files before onChange can fire).
+        // `.task(id:)` also runs on every appear, so skip a live player on the same URL.
+        .task(id: engine.playbackURL) {
+            let url = engine.playbackURL
+            if hasActivePlayer, url == attachedPlaybackURL { return }
+            if url != attachedPlaybackURL {
+                pausedByUser = false
+            }
+            attachedPlaybackURL = url
+            rebuildPlayer(with: url)
+        }
         .task(id: engine.playbackPhase) {
             while !Task.isCancelled {
                 await engine.refreshDownloadStatus()
@@ -167,15 +183,18 @@ struct StreamingPlayerView: View {
                 if engine.playbackPhase == .idle { break }
             }
         }
-        .onChange(of: engine.playbackURL) { _, url in
-            rebuildPlayer(with: url)
-        }
         .onChange(of: isActive) { _, active in
             #if os(macOS)
             playerFocused = active
             #endif
             if active {
-                if engine.selectedFileID != nil, engine.playbackURL == nil {
+                if let url = engine.playbackURL {
+                    if !hasActivePlayer {
+                        rebuildPlayer(with: url)
+                    } else if !pausedByUser {
+                        resumePlayback()
+                    }
+                } else if engine.selectedFileID != nil, engine.playbackPhase != .buffering {
                     Task { await engine.preparePlayback() }
                 }
             } else {
@@ -870,21 +889,32 @@ struct StreamingPlayerView: View {
             }
             vlcPlayer.togglePlayPause()
             isPlaying = vlcPlayer.isPlaybackRequestedActive
+            pausedByUser = !isPlaying
             return
         }
         guard let player else {
-            isPlaying.toggle()
+            if let url = engine.playbackURL {
+                pausedByUser = false
+                rebuildPlayer(with: url)
+            } else if engine.selectedFileID != nil {
+                guard engine.playbackPhase != .buffering else { return }
+                pausedByUser = false
+                Task { await engine.preparePlayback() }
+            }
             return
         }
         if player.timeControlStatus == .playing {
             player.pause()
             isPlaying = false
+            pausedByUser = true
         } else {
             player.play()
             isPlaying = true
+            pausedByUser = false
         }
         #else
         isPlaying.toggle()
+        pausedByUser = !isPlaying
         #endif
     }
 
@@ -898,6 +928,23 @@ struct StreamingPlayerView: View {
         }
         player?.pause()
         isPlaying = false
+        #endif
+    }
+
+    private func resumePlayback() {
+        #if os(macOS) || os(iOS)
+        if let vlcPlayer, engine.usesEmbeddedVLC {
+            if vlcPlayer.isMuted {
+                vlcPlayer.isMuted = false
+            }
+            if !vlcPlayer.isPlaybackRequestedActive {
+                vlcPlayer.togglePlayPause()
+            }
+            isPlaying = true
+            return
+        }
+        player?.play()
+        isPlaying = player != nil
         #endif
     }
 
@@ -939,7 +986,7 @@ struct StreamingPlayerView: View {
                 }
                 try next.play(url: url)
                 try? next.setAudioVolume(Volume(volume))
-                if isActive {
+                if isActive, !pausedByUser {
                     isPlaying = true
                 } else {
                     next.pause()
@@ -957,7 +1004,7 @@ struct StreamingPlayerView: View {
         next.volume = volume
         player = next
         attachObservers(to: next)
-        if isActive {
+        if isActive, !pausedByUser {
             next.play()
             isPlaying = true
         } else {

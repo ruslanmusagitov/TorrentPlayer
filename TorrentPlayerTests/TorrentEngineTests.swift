@@ -448,16 +448,348 @@ struct TorrentEngineTests {
         let engine = TorrentEngine()
         await engine.bootstrap()
 
-        await #expect(throws: AddTorrentError.self) {
+        do {
             try await engine.addMagnet("not-a-magnet")
+            Issue.record("Expected invalid magnet to throw")
+        } catch {
+            #expect(error is AddTorrentError)
+            #expect(engine.addError == error.localizedDescription)
         }
-        if case .error = engine.phase {
-            #expect(engine.isOperational)
-        } else {
-            Issue.record("Expected error phase after invalid magnet, got \(engine.phase)")
+        #expect(engine.phase == .ready)
+        #expect(engine.isOperational)
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+
+    @Test func magnetURIFromTorrentInfoIncludesHashAndTracker() throws {
+        #if os(macOS) || os(iOS)
+        let data = TorrentFileFixture.makeSingleFileTorrentData()
+        let info = try TorrentInfo.parse(from: data)
+        let uri = TorrentEngine.magnetURI(from: info)
+        #expect(uri.hasPrefix("magnet:?xt=urn:btih:"))
+        #expect(uri.contains("tr="))
+        #expect(uri.contains("dn=testfile.txt"))
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+
+    @Test @MainActor func addTorrentFileLoadsMetadataWithoutNetwork() async throws {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        await engine.bootstrap()
+
+        let fileURL = try TorrentFileFixture.writeTempFile()
+        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+
+        let returnedData = try await engine.addTorrentFile(url: fileURL)
+
+        guard case let .loaded(torrent) = engine.phase else {
+            Issue.record("Expected loaded phase after torrent file, got \(engine.phase)")
+            return
+        }
+        #expect(torrent.displayName == TorrentFileFixture.fileName)
+        #expect(torrent.files.count == 1)
+        #expect(torrent.files[0].path == TorrentFileFixture.fileName)
+        #expect(engine.lastMagnetURI?.contains("xt=urn:btih:") == true)
+        #expect(engine.lastMagnetURI?.contains("tr=") == true)
+        let torrentData = try Data(contentsOf: fileURL)
+        #expect(returnedData == torrentData)
+        #expect(engine.canAddTorrent)
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+
+    @Test @MainActor func addTorrentFileRejectsInvalidDataWhileKeepingPreviousTorrent() async throws {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        await engine.bootstrap()
+
+        let previous = TorrentFileFormatting.makeActiveTorrent(
+            displayName: "Previous",
+            infoHash: "prevhash",
+            totalSize: 1_000,
+            fileEntries: [("main.mkv", 1_000)]
+        )
+        engine.applyLoadedTorrentForTesting(previous)
+
+        let fileURL = try TorrentFileFixture.writeTempFile(data: Data("not-a-torrent".utf8))
+        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+
+        await #expect(throws: TorrentEngineError.invalidTorrentFile) {
+            try await engine.addTorrentFile(url: fileURL)
+        }
+
+        guard case let .loaded(loaded) = engine.phase else {
+            Issue.record("Invalid file must keep the loaded phase, got \(engine.phase)")
+            return
+        }
+        #expect(loaded == previous)
+        #expect(engine.addError == TorrentEngineError.invalidTorrentFile.localizedDescription)
+        #expect(engine.activeTorrent == previous)
+        #expect(engine.selectedFileID == previous.defaultSelectedFileID)
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+
+    @Test @MainActor func canAddTorrentTracksSessionAndAddInFlight() async throws {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        #expect(!engine.canAddTorrent)
+        #expect(!engine.isSessionUnavailable)
+
+        await engine.bootstrap()
+        #expect(engine.canAddTorrent)
+
+        let fileURL = try TorrentFileFixture.writeTempFile()
+        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+
+        let first = Task { try await engine.addTorrentFile(url: fileURL) }
+        // Let the first add start and suspend on its off-main file read.
+        while !engine.isLoadingTorrent {
+            await Task.yield()
+        }
+        #expect(!engine.canAddTorrent)
+        await #expect(throws: TorrentEngineError.addInProgress) {
+            try await engine.addMagnet("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567")
+        }
+        #expect(engine.addError == TorrentEngineError.addInProgress.localizedDescription)
+
+        _ = try await first.value
+        #expect(engine.addError == nil)
+        #expect(engine.canAddTorrent)
+        guard case .loaded = engine.phase else {
+            Issue.record("Rejected concurrent add must not disturb the first one, got \(engine.phase)")
+            return
         }
         #else
         #expect(Bool(true))
         #endif
     }
+
+    @Test @MainActor func invalidTorrentFileKeepsPreviousHandleLive() async throws {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        await engine.bootstrap()
+
+        let fileURL = try TorrentFileFixture.writeTempFile()
+        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+        try await engine.addTorrentFile(url: fileURL)
+        await engine.refreshDownloadStatus()
+        let piecesTotal = engine.piecesTotal
+        #expect(piecesTotal > 0)
+
+        let badURL = try TorrentFileFixture.writeTempFile(data: Data("not-a-torrent".utf8))
+        defer { try? FileManager.default.removeItem(at: badURL.deletingLastPathComponent()) }
+        await #expect(throws: TorrentEngineError.invalidTorrentFile) {
+            try await engine.addTorrentFile(url: badURL)
+        }
+        await #expect(throws: (any Error).self) {
+            try await engine.addMagnet("not-a-magnet")
+        }
+
+        // Status still comes from the previous torrent's handle, not a cleared one.
+        await engine.refreshDownloadStatus()
+        #expect(engine.piecesTotal == piecesTotal)
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+
+    @Test @MainActor func addTorrentFileRejectsNonFileURLWithoutReadingNetwork() async {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        let remote = URL(string: "https://example.com/video.torrent")!
+        await #expect(throws: TorrentEngineError.invalidTorrentFile) {
+            try await engine.addTorrentFile(url: remote)
+        }
+        #expect(engine.phase == .idle)
+        #expect(engine.addError == TorrentEngineError.invalidTorrentFile.localizedDescription)
+        #else
+        #expect(Bool(true))
+        #endif
+    }
 }
+
+@Suite(.serialized)
+@MainActor
+struct IncomingTorrentFilesTests {
+    @Test func isTorrentFileURLRequiresLocalFile() {
+        #expect(IncomingTorrentFiles.isTorrentFileURL(URL(fileURLWithPath: "/tmp/clip.torrent")))
+        #expect(!IncomingTorrentFiles.isTorrentFileURL(URL(fileURLWithPath: "/tmp/clip.mp4")))
+        #expect(!IncomingTorrentFiles.isTorrentFileURL(URL(string: "https://example.com/clip.torrent")!))
+        #expect(!IncomingTorrentFiles.isTorrentFileURL(URL(string: "magnet:?xt=urn:btih:abc")!))
+    }
+
+    @Test func handleKeepsOnlyTheLatestTorrent() {
+        defer { _ = IncomingTorrentFiles.takeLatest() }
+
+        IncomingTorrentFiles.enqueueLatest([
+            URL(fileURLWithPath: "/tmp/first.torrent"),
+            URL(fileURLWithPath: "/tmp/readme.txt"),
+            URL(fileURLWithPath: "/tmp/second.torrent"),
+        ])
+        IncomingTorrentFiles.enqueueLatest([
+            URL(string: "https://example.com/remote.torrent")!,
+            URL(fileURLWithPath: "/tmp/third.torrent"),
+        ])
+
+        #expect(IncomingTorrentFiles.hasPending)
+        #expect(IncomingTorrentFiles.takeLatest() == URL(fileURLWithPath: "/tmp/third.torrent"))
+        #expect(!IncomingTorrentFiles.hasPending)
+        #expect(IncomingTorrentFiles.takeLatest() == nil)
+    }
+
+    @Test func persistDroppedFileCopiesReadableTorrent() throws {
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("drop-source-\(UUID().uuidString).torrent")
+        try Data("torrent".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let persisted = try IncomingTorrentFiles.persistDroppedFile(source)
+        defer { try? FileManager.default.removeItem(at: persisted) }
+
+        #expect(IncomingTorrentFiles.isTorrentFileURL(persisted))
+        #expect(persisted != source)
+        #expect(try Data(contentsOf: persisted) == Data("torrent".utf8))
+    }
+
+    @Test func addTorrentFileDeletesIncomingStagingCopy() async throws {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        await engine.bootstrap()
+
+        let fixture = try TorrentFileFixture.writeTempFile()
+        defer { try? FileManager.default.removeItem(at: fixture.deletingLastPathComponent()) }
+
+        let staged = try IncomingTorrentFiles.persistDroppedFile(fixture)
+        try await engine.addTorrentFile(url: staged)
+        #expect(!FileManager.default.fileExists(atPath: staged.path))
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+
+    @Test func enqueueLatestDeletesReplacedStagingCopy() throws {
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("drop-replace-\(UUID().uuidString).torrent")
+        try Data("torrent".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let first = try IncomingTorrentFiles.persistDroppedFile(source)
+        let second = try IncomingTorrentFiles.persistDroppedFile(source)
+        defer {
+            IncomingTorrentFiles.discardLatest()
+            IncomingTorrentFiles.removeConsumedCopyIfNeeded(first)
+            IncomingTorrentFiles.removeConsumedCopyIfNeeded(second)
+        }
+
+        IncomingTorrentFiles.enqueueLatest([first])
+        IncomingTorrentFiles.enqueueLatest([second])
+
+        #expect(!FileManager.default.fileExists(atPath: first.path))
+        #expect(FileManager.default.fileExists(atPath: second.path))
+        #expect(IncomingTorrentFiles.takeLatest() == second)
+    }
+
+    @Test func enqueueLatestDeletesUnacceptedCopiesInTheSameBatch() throws {
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("drop-batch-\(UUID().uuidString).torrent")
+        try Data("torrent".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let first = try IncomingTorrentFiles.persistDroppedFile(source)
+        let second = try IncomingTorrentFiles.persistDroppedFile(source)
+        let third = try IncomingTorrentFiles.persistDroppedFile(source)
+        defer {
+            IncomingTorrentFiles.discardLatest()
+            IncomingTorrentFiles.removeConsumedCopyIfNeeded(third)
+        }
+
+        IncomingTorrentFiles.enqueueLatest([first, second, third])
+
+        #expect(!FileManager.default.fileExists(atPath: first.path))
+        #expect(!FileManager.default.fileExists(atPath: second.path))
+        #expect(FileManager.default.fileExists(atPath: third.path))
+        #expect(IncomingTorrentFiles.takeLatest() == third)
+    }
+
+    @Test func addTorrentFileDeletesStagingCopyWhenAddAlreadyInFlight() async throws {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        await engine.bootstrap()
+
+        let fixture = try TorrentFileFixture.writeTempFile()
+        defer { try? FileManager.default.removeItem(at: fixture.deletingLastPathComponent()) }
+
+        let first = Task { try await engine.addTorrentFile(url: fixture) }
+        while !engine.isLoadingTorrent {
+            await Task.yield()
+        }
+
+        let staged = try IncomingTorrentFiles.persistDroppedFile(fixture)
+        await #expect(throws: TorrentEngineError.addInProgress) {
+            try await engine.addTorrentFile(url: staged)
+        }
+        #expect(!FileManager.default.fileExists(atPath: staged.path))
+        _ = try await first.value
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+
+    @Test func addTorrentFileDeletesStagingCopyWhenLoadFails() async throws {
+        #if os(macOS) || os(iOS)
+        let engine = TorrentEngine()
+        await engine.bootstrap()
+
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("drop-invalid-\(UUID().uuidString).torrent")
+        try Data("not-a-torrent".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let staged = try IncomingTorrentFiles.persistDroppedFile(source)
+        await #expect(throws: TorrentEngineError.invalidTorrentFile) {
+            try await engine.addTorrentFile(url: staged)
+        }
+        #expect(!FileManager.default.fileExists(atPath: staged.path))
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+}
+
+#if os(macOS) || os(iOS)
+enum TorrentFileFixture {
+    static let announceURL = "skip://tracker.invalid/announce"
+    static let fileName = "testfile.txt"
+
+    static func makeSingleFileTorrentData() -> Data {
+        let encoder = BencodeEncoder()
+        let pieces = Data(repeating: 0xAB, count: 20)
+        let info: BencodeValue = .dictionary([
+            (key: Data("length".utf8), value: .integer(1024)),
+            (key: Data("name".utf8), value: .string(Data(fileName.utf8))),
+            (key: Data("piece length".utf8), value: .integer(262144)),
+            (key: Data("pieces".utf8), value: .string(pieces)),
+        ])
+        let root: BencodeValue = .dictionary([
+            (key: Data("announce".utf8), value: .string(Data(announceURL.utf8))),
+            (key: Data("info".utf8), value: info),
+        ])
+        return encoder.encode(root)
+    }
+
+    static func writeTempFile(data: Data = TorrentFileFixture.makeSingleFileTorrentData()) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TorrentPlayerTorrent-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("fixture.torrent")
+        try data.write(to: url)
+        return url
+    }
+}
+#endif

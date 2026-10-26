@@ -72,4 +72,121 @@ final class TorrentHistoryEntry {
             in: context
         )
     }
+
+    /// Loads a magnet into the engine and records history on success.
+    @MainActor
+    static func addMagnet(
+        _ uri: String,
+        using engine: TorrentEngine,
+        in context: ModelContext
+    ) async throws {
+        try await engine.addMagnet(uri)
+        recordActiveLoad(from: engine, in: context)
+    }
+
+    /// Loads a .torrent file into the engine and records history on success.
+    @MainActor
+    static func addTorrentFile(
+        url: URL,
+        using engine: TorrentEngine,
+        in context: ModelContext
+    ) async throws {
+        let data = try await engine.addTorrentFile(url: url)
+        if let torrent = engine.activeTorrent {
+            do {
+                try TorrentHistoryFileStore.store(data: data, infoHash: torrent.infoHash)
+            } catch {
+                TPLog.error("history torrent copy failed: \(error.localizedDescription)")
+            }
+        }
+        recordActiveLoad(from: engine, in: context)
+    }
+
+    /// Reopens a history row: the stored .torrent copy if present, otherwise the magnet.
+    /// Leaves the row (order, magnet URI) and the stored copy untouched, like a magnet resume.
+    @MainActor
+    static func resume(_ entry: TorrentHistoryEntry, using engine: TorrentEngine) async throws {
+        if let fileURL = TorrentHistoryFileStore.fileURLIfPresent(for: entry.infoHash) {
+            try await engine.addTorrentFile(url: fileURL)
+            return
+        }
+        try await engine.addMagnet(entry.magnetURI)
+    }
+
+    @MainActor
+    private static func recordActiveLoad(from engine: TorrentEngine, in context: ModelContext) {
+        do {
+            try recordLoad(
+                magnetURI: engine.lastMagnetURI,
+                torrent: engine.activeTorrent,
+                in: context
+            )
+        } catch {
+            TPLog.error("history record failed: \(error.localizedDescription)")
+        }
+    }
+}
+
+enum TorrentHistoryFileStore {
+    @TaskLocal static var directoryOverride: URL?
+
+    static func directory() throws -> URL {
+        if let directoryOverride {
+            try FileManager.default.createDirectory(at: directoryOverride, withIntermediateDirectories: true)
+            return directoryOverride
+        }
+        let base = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ).appendingPathComponent("TorrentPlayer/HistoryTorrents", isDirectory: true)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base
+    }
+
+    static func fileURL(for infoHash: String) throws -> URL {
+        try directory().appendingPathComponent("\(infoHash).torrent", isDirectory: false)
+    }
+
+    /// Read-only lookup. Does not create the history directory.
+    static func fileURLIfPresent(for infoHash: String) -> URL? {
+        let base: URL?
+        if let directoryOverride {
+            base = directoryOverride
+        } else {
+            base = try? FileManager.default.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: false
+            ).appendingPathComponent("TorrentPlayer/HistoryTorrents", isDirectory: true)
+        }
+        guard let base else { return nil }
+        let url = base.appendingPathComponent("\(infoHash).torrent", isDirectory: false)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url
+    }
+
+    static func store(data: Data, infoHash: String) throws {
+        try data.write(to: try fileURL(for: infoHash), options: .atomic)
+    }
+
+    static func remove(infoHash: String) {
+        guard let url = try? fileURL(for: infoHash) else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    static func removeAll() {
+        guard let dir = try? directory() else { return }
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        for item in items {
+            try? fm.removeItem(at: item)
+        }
+    }
 }
