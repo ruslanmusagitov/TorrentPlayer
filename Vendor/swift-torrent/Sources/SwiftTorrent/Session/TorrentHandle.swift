@@ -391,7 +391,7 @@ public actor TorrentHandle {
     }
 
     /// Download pieces covering `[fileOffset, fileOffset + length)` within `fileIndex`.
-    /// Used to fetch MKV/AVI trailing cues before progressive playback starts.
+    /// Used to fetch MP4 `moov` / MKV-AVI cues at EOF before progressive playback starts.
     public func prioritizeFileBytes(
         fileIndex: Int,
         fileOffset: Int64,
